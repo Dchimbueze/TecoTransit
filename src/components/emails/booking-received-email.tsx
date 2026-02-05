@@ -69,7 +69,7 @@ export default function BookingReceivedEmail({
           <Text style={footer}>
             TecoTransit, Your reliable travel partner. <br />
             KM. 8.5, Afe Babalola Way, Ado Ekiti <br />
-            Contact us at <Link href="mailto:tecotransportservices@gmail.com" style={link}>tecotransportservices@gmail.com</Link>
+            Contact us at <Link href="mailto:chimdaveo@gmail.com" style={link}>chimdaveo@gmail.com</Link>
           </Text>
         </Container>
       </Body>

@@ -65,7 +65,7 @@ export default function BookingStatusEmail({
            {status === 'Cancelled' && (
              <Section style={highlightSectionRed}>
                 <Text style={highlightText}>
-                    Unfortunately, your booking has been cancelled. To request a refund, please contact our support team via WhatsApp for the quickest resolution. If you have any questions, you can also reach us at <Link href="mailto:tecotransportservices@gmail.com" style={link}>tecotransportservices@gmail.com</Link>.
+                    Unfortunately, your booking has been cancelled. To request a refund, please contact our support team via WhatsApp for the quickest resolution. If you have any questions, you can also reach us at <Link href="mailto:chimdaveo@gmail.com" style={link}>chimdaveo@gmail.com</Link>.
                 </Text>
              </Section>
           )}
@@ -88,7 +88,7 @@ export default function BookingStatusEmail({
           <Text style={footer}>
             TecoTransit, Your reliable travel partner. <br />
             KM. 8.5, Afe Babalola Way, Ado Ekiti <br />
-            Contact us at <Link href="mailto:tecotransportservices@gmail.com" style={link}>tecotransportservices@gmail.com</Link>
+            Contact us at <Link href="mailto:chimdaveo@gmail.com" style={link}>chimdaveo@gmail.com</Link>
           </Text>
         </Container>
       </Body>

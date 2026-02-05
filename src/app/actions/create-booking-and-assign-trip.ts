@@ -1,4 +1,3 @@
-
 'use server';
 
 import type { Booking, BookingFormData, Passenger, PriceRule, Trip } from '@/lib/types';
@@ -206,7 +205,7 @@ async function sendOverflowEmail(bookingDetails: any, reason: string) {
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['tecotransportservices@gmail.com'],
+            to: ['chimdaveo@gmail.com'],
             subject: 'Urgent: Vehicle Capacity Exceeded or Booking Assignment Failed',
             html: `
                 <h1>Vehicle Capacity Alert</h1>

@@ -1,4 +1,3 @@
-
 'use server';
 
 import { Resend } from 'resend';
@@ -115,7 +114,7 @@ interface SendRefundRequestEmailProps {
 
 export const sendRefundRequestEmail = async (props: SendRefundRequestEmailProps) => {
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const refundEmail = 'tecotransportservices@gmail.com';
+  const refundEmail = 'chimdaveo@gmail.com';
 
   try {
     const { data, error } = await resend.emails.send({
@@ -153,7 +152,7 @@ export const sendRescheduleFailedEmail = async (booking: Booking) => {
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['tecotransportservices@gmail.com'],
+            to: ['chimdaveo@gmail.com'],
             subject: `Action Required: Booking Reschedule Failed (ID: ${booking.id.substring(0,8)})`,
             html: `
                 <h1>Action Required: Automatic Reschedule Failed</h1>
