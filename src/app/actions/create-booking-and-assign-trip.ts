@@ -1,4 +1,3 @@
-
 'use server';
 
 import type { Booking, BookingFormData, Passenger, PriceRule, Trip } from '@/lib/types';
@@ -15,8 +14,14 @@ type CreateBookingResult = {
     error?: string;
 }
 
+const ADMIN_EMAIL = 'tecotransportservices@gmail.com';
+
+/**
+ * Creates a 'Pending' booking and holds a seat on a trip for 7 minutes.
+ */
 export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyPolicy'> & { totalFare: number }): Promise<CreateBookingResult> => {
-    const db = getFirebaseAdmin()?.firestore();
+    const admin = getFirebaseAdmin();
+    const db = admin?.firestore();
     if (!db) return { success: false, error: "Database connection failed." };
     
     const newBookingRef = db.collection('bookings').doc();
@@ -32,7 +37,13 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     
     try {
         await newBookingRef.set(firestoreBooking);
-        await assignBookingToTrip(firestoreBooking as any);
+        
+        const bookingForAssignment = { 
+            ...firestoreBooking, 
+            createdAt: Date.now() 
+        } as any;
+
+        await assignBookingToTrip(bookingForAssignment);
 
         const createdDoc = await newBookingRef.get();
         const createdData = createdDoc.data();
@@ -49,13 +60,20 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     }
 };
 
+/**
+ * Atomically assigns a booking to a trip, handling temporary 7-minute holds.
+ */
 export async function assignBookingToTrip(bookingData: Booking) {
-    const db = getFirebaseAdmin()?.firestore();
+    const admin = getFirebaseAdmin();
+    const db = admin?.firestore();
     if (!db) throw new Error("Database connection failed.");
 
-    const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate } = bookingData;
+    const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate, status } = bookingData;
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
     
+    const HOLD_DURATION_MS = 7 * 60 * 1000; // 7 minutes window
+    const now = Date.now();
+
     try {
         let assignedTripId: string | null = null;
         
@@ -75,15 +93,31 @@ export async function assignBookingToTrip(bookingData: Booking) {
             
             const tripsSnapshot = await transaction.get(tripsQuery);
             let assigned = false;
-            const passenger: Passenger = { bookingId, name, phone };
+            
+            const passenger: Passenger = { 
+                bookingId, 
+                name, 
+                phone,
+                heldUntil: status === 'Pending' ? now + HOLD_DURATION_MS : undefined
+            };
 
             for (const doc of tripsSnapshot.docs) {
                 const trip = doc.data() as Trip;
-                if (!trip.isFull) {
-                    const newCount = (trip.passengers || []).length + 1;
-                    const updates: any = { passengers: FieldValue.arrayUnion(passenger) };
-                    if (newCount >= capacity) updates.isFull = true;
-                    transaction.update(doc.ref, updates);
+                
+                const activePassengers = (trip.passengers || []).filter(p => {
+                    if (p.heldUntil && p.heldUntil < now) return false; 
+                    return true;
+                });
+
+                if (activePassengers.length < capacity) {
+                    const updatedPassengers = [...activePassengers, passenger];
+                    const isFull = updatedPassengers.length >= capacity;
+                    
+                    transaction.update(doc.ref, { 
+                        passengers: updatedPassengers,
+                        isFull: isFull 
+                    });
+                    
                     assigned = true;
                     assignedTripId = doc.id;
                     break;
@@ -125,7 +159,7 @@ async function sendOverflowEmail(bookingDetails: any, reason: string) {
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['chimdaveo@gmail.com'],
+            to: [ADMIN_EMAIL],
             subject: 'Urgent: Vehicle Capacity Alert',
             html: `<p>Booking ${bookingDetails.id} assignment failed: ${reason}</p>`,
         });
@@ -138,13 +172,18 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
     if (!tripSnap.exists) return;
 
     const trip = tripSnap.data() as Trip;
-    if (!trip.isFull) return;
-    
     const passengerIds = trip.passengers.map(p => p.bookingId);
     if (passengerIds.length === 0) return;
 
     const bookingsSnapshot = await db.collection('bookings').where(FieldPath.documentId(), 'in', passengerIds).get();
-    const bookingsToConfirm = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Paid');
+    const paidBookings = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Paid');
+    const confirmedBookings = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Confirmed');
+    
+    const totalConfirmedOrPaid = paidBookings.length + confirmedBookings.length;
+
+    if (totalConfirmedOrPaid < trip.capacity) return;
+    
+    const bookingsToConfirm = paidBookings;
 
     if (bookingsToConfirm.length === 0) return;
 

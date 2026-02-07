@@ -1,4 +1,3 @@
-
 import {
   Body,
   Container,
@@ -48,7 +47,7 @@ export default function BookingStatusEmail({
              </Section>
           )}
           <Hr style={hr} />
-          <Text style={footer}>TecoTransit | Contact: chimdaveo@gmail.com</Text>
+          <Text style={footer}>TecoTransit | Contact: tecotransportservices@gmail.com</Text>
         </Container>
       </Body>
     </Html>

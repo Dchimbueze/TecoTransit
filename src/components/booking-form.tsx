@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users } from 'lucide-react';
+import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users, Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from './ui/checkbox';
 import BookingConfirmationDialog from './booking-confirmation-dialog';
@@ -28,6 +28,8 @@ import { createPendingBooking } from '@/app/actions/create-booking-and-assign-tr
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { PriceRule, SeatAvailability } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ClientOnly } from './client-only';
 
 
 const bookingSchema = z.object({
@@ -188,16 +190,16 @@ export default function BookingForm() {
 
     try {
         const priceRuleId = `${formData.pickup}_${formData.destination}_${formData.vehicleType}`.toLowerCase().replace(/\s+/g, '-');
-        
+        const bookingDataWithFare = { ...formData, totalFare };
+
         if (isPaystackEnabled) {
-            const bookingDataWithFare = { ...formData, totalFare };
-            const cleanBookingData = {
+            const cleanBookingDataForHold = {
               name: bookingDataWithFare.name,
               email: bookingDataWithFare.email,
               phone: bookingDataWithFare.phone,
               pickup: bookingDataWithFare.pickup,
               destination: bookingDataWithFare.destination,
-              intendedDate: format(bookingDataWithFare.intendedDate, 'yyyy-MM-dd'),
+              intendedDate: bookingDataWithFare.intendedDate,
               vehicleType: bookingDataWithFare.vehicleType,
               luggageCount: bookingDataWithFare.luggageCount,
               totalFare: bookingDataWithFare.totalFare,
@@ -205,16 +207,16 @@ export default function BookingForm() {
             };
 
             const result = await initializeTransaction({
-                email: cleanBookingData.email,
-                amount: cleanBookingData.totalFare * 100, 
+                email: cleanBookingDataForHold.email,
+                amount: cleanBookingDataForHold.totalFare * 100, 
                 metadata: {
                     priceRuleId,
-                    booking_details: JSON.stringify(cleanBookingData),
                     custom_fields: [
-                        { display_name: "Customer Name", variable_name: "customer_name", value: cleanBookingData.name },
-                        { display_name: "Route", variable_name: "route", value: `${cleanBookingData.pickup} to ${cleanBookingData.destination}` }
+                        { display_name: "Customer Name", variable_name: "customer_name", value: cleanBookingDataForHold.name },
+                        { display_name: "Route", variable_name: "route", value: `${cleanBookingDataForHold.pickup} to ${cleanBookingDataForHold.destination}` }
                     ]
-                }
+                },
+                bookingData: cleanBookingDataForHold
             });
             
             if (result.status && result.data?.authorization_url) {
@@ -223,7 +225,7 @@ export default function BookingForm() {
                 throw new Error(result.message || 'Failed to initialize transaction.');
             }
         } else {
-            await createPendingBooking({ ...formData, totalFare });
+            await createPendingBooking(bookingDataWithFare);
             setIsConfirmationOpen(true);
             form.reset();
         }
@@ -261,7 +263,7 @@ export default function BookingForm() {
 
 
   return (
-    <>
+    <ClientOnly>
     <Card className="w-full shadow-2xl shadow-primary/10">
        <CardHeader>
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 text-center sm:text-left">
@@ -293,60 +295,85 @@ export default function BookingForm() {
                             </Button>
                         ))}
                     </div>
-                </DialogContent>
+                 </DialogContent>
             </Dialog>
         </div>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={formHandleSubmit(onBookingSubmit)}>
           <CardContent className="space-y-8 pt-6">
+            {isPaystackEnabled && (
+                <Alert variant="default" className="bg-primary/10 border-primary/20">
+                    <Timer className="h-4 w-4 text-primary" />
+                    <AlertTitle className="text-primary font-bold">Important Notice</AlertTitle>
+                    <AlertDescription>
+                        Once you proceed to payment, your seat will be temporarily held for <span className="font-bold underline">7 minutes</span>. Please complete your transaction within this window to secure your spot.
+                    </AlertDescription>
+                </Alert>
+            )}
+
             <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
                 <FormField control={form.control} name="name" render={({ field }) => (
                     <FormItem>
                     <FormLabel>Full Name</FormLabel>
-                    <FormControl><div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="John Doe" {...field} className="pl-9" /></div></FormControl>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <FormControl>
+                        <Input placeholder="John Doe" {...field} className="pl-9" />
+                      </FormControl>
+                    </div>
                     <FormMessage />
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="email" render={({ field }) => (
                     <FormItem>
                     <FormLabel>Email Address</FormLabel>
-                    <FormControl><div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input type="email" placeholder="you@example.com" {...field} className="pl-9" /></div></FormControl>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <FormControl>
+                        <Input type="email" placeholder="you@example.com" {...field} className="pl-9" />
+                      </FormControl>
+                    </div>
                     <FormMessage />
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="phone" render={({ field }) => (
                     <FormItem>
                     <FormLabel>Phone Number</FormLabel>
-                    <FormControl><div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input type="tel" placeholder="(123) 456-7890" {...field} className="pl-9" /></div></FormControl>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <FormControl>
+                        <Input type="tel" placeholder="(123) 456-7890" {...field} className="pl-9" />
+                      </FormControl>
+                    </div>
                     <FormMessage />
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="pickup" render={({ field }) => (
                     <FormItem>
                     <FormLabel>Pickup Location</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ''}>
-                        <FormControl>
-                        <SelectTrigger><SelectValue placeholder="Select a location" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {locations.map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Select onValueChange={field.onChange} value={field.value || ''}>
+                          <SelectTrigger><SelectValue placeholder="Select a location" /></SelectTrigger>
+                          <SelectContent>
+                          {locations.map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                     </FormItem>
                 )} />
                 <FormField control={form.control} name="destination" render={({ field }) => (
                     <FormItem>
                     <FormLabel>Destination</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ''} disabled={!pickup}>
-                        <FormControl>
-                        <SelectTrigger><SelectValue placeholder={!pickup ? 'Select pickup first' : 'Select a destination'} /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {locations.filter(loc => loc !== pickup).map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Select onValueChange={field.onChange} value={field.value || ''} disabled={!pickup}>
+                          <SelectTrigger><SelectValue placeholder={!pickup ? 'Select pickup first' : 'Select a destination'} /></SelectTrigger>
+                          <SelectContent>
+                          {locations.filter(loc => loc !== pickup).map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                     </FormItem>
                 )} />
@@ -354,12 +381,14 @@ export default function BookingForm() {
                     <FormItem className="flex flex-col">
                     <FormLabel>Departure Date</FormLabel>
                     <Popover open={isIntendedDatePopoverOpen} onOpenChange={setIsIntendedDatePopoverOpen}>
-                        <PopoverTrigger asChild><FormControl>
+                        <PopoverTrigger asChild>
+                          <FormControl>
                             <Button variant={"outline"} className={cn("w-full justify-start pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
                             </Button>
-                        </FormControl></PopoverTrigger>
+                          </FormControl>
+                        </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
                             <Calendar 
                                 mode="single" 
@@ -391,23 +420,23 @@ export default function BookingForm() {
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Vehicle Type</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={pricesLoading || availableVehicles.length === 0}>
-                            <FormControl>
-                            <SelectTrigger>
-                                <SelectValue placeholder={
-                                    pricesLoading ? 'Loading vehicles...' : 
-                                    !pickup || !destination ? 'Select route first' : 
-                                    availableVehicles.length === 0 ? 'No vehicles for this route' :
-                                    'Select a vehicle'
-                                } />
-                            </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                            {availableVehicles.map((v) => (
-                                <SelectItem key={v.id} value={v.vehicleType}>{v.vehicleType}</SelectItem>
-                            ))}
-                            </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <Select onValueChange={field.onChange} value={field.value} disabled={pricesLoading || availableVehicles.length === 0}>
+                              <SelectTrigger>
+                                  <SelectValue placeholder={
+                                      pricesLoading ? 'Loading vehicles...' : 
+                                      !pickup || !destination ? 'Select route first' : 
+                                      availableVehicles.length === 0 ? 'No vehicles for this route' :
+                                      'Select a vehicle'
+                                  } />
+                              </SelectTrigger>
+                              <SelectContent>
+                              {availableVehicles.map((v) => (
+                                  <SelectItem key={v.id} value={v.vehicleType}>{v.vehicleType}</SelectItem>
+                              ))}
+                              </SelectContent>
+                          </Select>
+                        </FormControl>
                         <FormMessage />
                         </FormItem>
                     )}
@@ -415,14 +444,14 @@ export default function BookingForm() {
                  <FormField control={form.control} name="luggageCount" render={({ field }) => (
                     <FormItem>
                     <FormLabel>Number of Bags (Max {selectedVehicleDetails?.maxLuggages ?? 'N/A'})</FormLabel>
-                    <Select onValueChange={(value) => field.onChange(parseInt(value, 10))} value={String(field.value || 0)} disabled={!vehicleType}>
-                        <FormControl>
-                        <SelectTrigger><SelectValue placeholder={!vehicleType ? "Select vehicle first" : "Select number of bags"} /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {luggageOptions.map(i => <SelectItem key={i} value={String(i)}>{i === 0 ? 'None' : `${i} bag${i > 1 ? 's' : ''}`}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Select onValueChange={(value) => field.onChange(parseInt(value, 10))} value={String(field.value || 0)} disabled={!vehicleType}>
+                          <SelectTrigger><SelectValue placeholder={!vehicleType ? "Select vehicle first" : "Select number of bags"} /></SelectTrigger>
+                          <SelectContent>
+                          {luggageOptions.map(i => <SelectItem key={i} value={String(i)}>{i === 0 ? 'None' : `${i} bag${i > 1 ? 's' : ''}`}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                     </FormItem>
                 )} />
@@ -519,6 +548,6 @@ export default function BookingForm() {
         setIsConfirmationOpen(false);
       }}
     />
-    </>
+    </ClientOnly>
   );
 }

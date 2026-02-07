@@ -21,7 +21,7 @@ export default function PrivacyPolicyPage() {
         </CardHeader>
         
         <CardContent className="space-y-8 text-base text-muted-foreground">
-            <p>Welcome to TecoTransit. Contact us at chimdaveo@gmail.com for any questions.</p>
+            <p>Welcome to TecoTransit. Contact us at tecotransportservices@gmail.com for any questions.</p>
             <Separator />
             <div className="space-y-4">
                 <h2 className="text-2xl font-playfair font-semibold text-foreground">1. Data Collection</h2>
@@ -30,7 +30,7 @@ export default function PrivacyPolicyPage() {
             <Separator />
             <div className="space-y-4">
                 <h2 className="text-2xl font-playfair font-semibold text-foreground">2. Contact</h2>
-                <p>Email us at: <strong>chimdaveo@gmail.com</strong></p>
+                <p>Email us at: <strong>tecotransportservices@gmail.com</strong></p>
             </div>
         </CardContent>
       </Card>

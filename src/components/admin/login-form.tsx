@@ -141,27 +141,27 @@ export function LoginForm() {
                             Forgot password?
                         </Button>
                     </div>
-                    <FormControl>
-                        <div className="relative">
+                    <div className="relative">
+                        <FormControl>
                             <Input 
                                 type={showPassword ? "text" : "password"} 
                                 placeholder="••••••••" 
                                 {...field} 
                                 autoComplete="current-password"
                             />
-                            <Button 
-                                type="button" 
-                                variant="ghost" 
-                                size="icon" 
-                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground"
-                                onClick={() => setShowPassword(!showPassword)}
-                                tabIndex={-1}
-                            >
-                                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                <span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>
-                            </Button>
-                        </div>
-                    </FormControl>
+                        </FormControl>
+                        <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="icon" 
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-muted-foreground"
+                            onClick={() => setShowPassword(!showPassword)}
+                            tabIndex={-1}
+                        >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            <span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>
+                        </Button>
+                    </div>
                   <FormMessage />
                 </FormItem>
               )}

@@ -1,4 +1,3 @@
-
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
@@ -11,12 +10,14 @@ export async function getSeatAvailability(
     vehicleType: string,
     date: string
 ): Promise<SeatAvailability> {
-    const db = getFirebaseAdmin()?.firestore();
+    const admin = getFirebaseAdmin();
+    const db = admin?.firestore();
     if (!db) {
         throw new Error("Database connection failed.");
     }
 
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
+    const now = Date.now();
 
     try {
         const priceRuleRef = db.collection('prices').doc(priceRuleId);
@@ -43,14 +44,20 @@ export async function getSeatAvailability(
             .where('date', '==', date);
 
         const tripsSnapshot = await tripsQuery.get();
-        let bookedSeats = 0;
+        let occupiedSeats = 0;
 
         tripsSnapshot.forEach(doc => {
             const trip = doc.data() as Trip;
-            bookedSeats += (trip.passengers || []).length;
+            const activePassengers = (trip.passengers || []).filter(p => {
+                if (p.heldUntil && p.heldUntil < now) {
+                    return false;
+                }
+                return true;
+            });
+            occupiedSeats += activePassengers.length;
         });
 
-        const availableSeats = Math.max(0, totalCapacity - bookedSeats);
+        const availableSeats = Math.max(0, totalCapacity - occupiedSeats);
 
         return {
             availableSeats,

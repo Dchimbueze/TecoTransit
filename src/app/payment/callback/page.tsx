@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Suspense, useEffect, useState, useRef } from 'react';
@@ -7,6 +6,7 @@ import { verifyTransactionAndCreateBooking } from '@/app/actions/paystack';
 import { CheckCircle, AlertCircle, Loader2, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { ClientOnly } from '@/components/client-only';
 
 function PaymentCallback() {
   const searchParams = useSearchParams();
@@ -42,9 +42,10 @@ function PaymentCallback() {
           setStatus('error');
           setMessage(result.error || 'An unknown error occurred while confirming your booking.');
         }
-      } catch (error) {
+      } catch (error: any) {
+        console.error('Verification error caught in UI:', error);
         setStatus('error');
-        setMessage(error instanceof Error ? error.message : 'A critical error occurred.');
+        setMessage(error instanceof Error ? error.message : 'A network or server error occurred. Please contact support if your payment was successful.');
       }
     };
 
@@ -57,21 +58,21 @@ function PaymentCallback() {
       {status === 'loading' && (
         <>
           <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-          <h1 className="text-2xl font-bold">Processing Payment</h1>
+          <h1 className="text-2xl font-bold font-headline">Processing Payment</h1>
           <p className="text-muted-foreground mt-2 max-w-md">{message}</p>
         </>
       )}
       {status === 'success' && (
         <>
           <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
-          <h1 className="text-2xl font-bold">Payment Successful!</h1>
+          <h1 className="text-2xl font-bold font-headline">Payment Successful!</h1>
           <p className="text-muted-foreground mt-2 max-w-md">{message}</p>
         </>
       )}
       {status === 'error' && (
         <>
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-          <h1 className="text-2xl font-bold">An Error Occurred</h1>
+          <h1 className="text-2xl font-bold font-headline">An Error Occurred</h1>
           <p className="text-muted-foreground mt-2 max-w-md">{message}</p>
         </>
       )}
@@ -87,13 +88,15 @@ function PaymentCallback() {
 
 export default function PaymentCallbackPage() {
     return (
-        <Suspense fallback={
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-4">
-                <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                <h1 className="text-2xl font-bold">Loading...</h1>
-            </div>
-        }>
-            <PaymentCallback />
-        </Suspense>
+        <ClientOnly>
+          <Suspense fallback={
+              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-4">
+                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                  <h1 className="text-2xl font-bold font-headline">Loading...</h1>
+              </div>
+          }>
+              <PaymentCallback />
+          </Suspense>
+        </ClientOnly>
     )
 }

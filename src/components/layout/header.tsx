@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -59,13 +58,15 @@ export default function Header() {
                 }
                 return <NavLink key={link.href} href={link.href} label={link.label}/>
              })}
-             <ThemeToggle />
+             <ClientOnly>
+                <ThemeToggle />
+             </ClientOnly>
           </nav>
 
           {/* Mobile Navigation */}
           <div className="md:hidden flex items-center gap-2">
-            <ThemeToggle />
             <ClientOnly>
+                <ThemeToggle />
                 <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                     <Button variant="outline" size="icon">

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
@@ -26,26 +25,37 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   });
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
+    // Listen to payment settings
+    const unsubPayment = onSnapshot(doc(db, 'settings', 'payment'), (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.data();
-        setSettings({
-          isPaystackEnabled: data.isPaystackEnabled ?? true,
-          bookingDateRange: data.bookingDateRange ? {
-            from: new Date(data.bookingDateRange.from),
-            to: new Date(data.bookingDateRange.to),
-          } : undefined,
+        setSettings(prev => ({
+          ...prev,
+          isPaystackEnabled: snapshot.data().isPaystackEnabled ?? true,
           loading: false,
-        });
+        }));
       } else {
         setSettings(prev => ({ ...prev, loading: false }));
       }
-    }, (error) => {
-      console.error("Error fetching settings:", error);
-      setSettings(prev => ({ ...prev, loading: false }));
     });
 
-    return () => unsub();
+    // Listen to booking window settings
+    const unsubBooking = onSnapshot(doc(db, 'settings', 'booking'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setSettings(prev => ({
+          ...prev,
+          bookingDateRange: {
+            from: data.startDate?.toDate(),
+            to: data.endDate?.toDate(),
+          },
+        }));
+      }
+    });
+
+    return () => {
+      unsubPayment();
+      unsubBooking();
+    };
   }, []);
 
   return (
