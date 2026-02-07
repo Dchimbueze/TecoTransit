@@ -61,23 +61,36 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
 
 /**
  * Verifies the transaction and updates the held booking to 'Paid'.
+ * This function explicitly calls the Paystack server to check transaction success.
  */
-export const verifyTransactionAndCreateBooking = async (reference: string) => {
+export const verifyTransactionAndCreateBooking = async (reference: string | null) => {
+    if (!reference) {
+        return { success: false, error: 'No payment reference provided.' };
+    }
+
     try {
         const secretKey = process.env.PAYSTACK_SECRET_KEY;
         if (!secretKey) throw new Error('PAYSTACK_SECRET_KEY is not configured.');
 
+        // Calling Paystack server directly to verify the transaction status
         const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+            method: 'GET',
             headers: {
                 Authorization: `Bearer ${secretKey}`,
                 'Content-Type': 'application/json',
             },
+            cache: 'no-store',
         });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Paystack API responded with status: ${response.status}`);
+        }
 
         const verificationData = await response.json();
 
         if (!verificationData.status || verificationData.data.status !== 'success') {
-            throw new Error(verificationData.data?.gateway_response || verificationData.message || 'Payment verification failed.');
+            throw new Error(verificationData.data?.gateway_response || verificationData.message || 'Payment was not successful.');
         }
 
         const data = verificationData.data;
@@ -87,34 +100,42 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
         }
 
         const bookingId = metadata?.booking_id;
-        if (!bookingId) throw new Error('Booking ID missing from metadata.');
+        if (!bookingId) throw new Error('Booking ID missing from payment metadata.');
 
         const admin = getFirebaseAdmin();
         const db = admin?.firestore();
-        if (!db) throw new Error('Database connection failed.');
+        if (!db) throw new Error('Internal server error: Database connection failed.');
         
         const bookingRef = db.collection('bookings').doc(bookingId);
         const bookingSnap = await bookingRef.get();
 
-        if (!bookingSnap.exists) throw new Error(`Booking ${bookingId} not found.`);
+        if (!bookingSnap.exists) {
+            throw new Error(`Booking record (${bookingId}) not found. Please contact tecotransportservices@gmail.com.`);
+        }
 
-        await bookingRef.update({
-            status: 'Paid',
-            paymentReference: reference,
-            updatedAt: FieldValue.serverTimestamp(),
-        });
+        const bookingData = bookingSnap.data() as Booking;
 
-        const updatedBookingData = bookingSnap.data();
-        if (updatedBookingData?.tripId) {
-            try {
-                const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
-                await checkAndConfirmTrip(db, updatedBookingData.tripId);
-            } catch (e) { console.error('Trip confirmation sync error:', e); }
+        // Only update if not already processed to avoid redundant operations
+        if (bookingData.status === 'Pending') {
+            await bookingRef.update({
+                status: 'Paid',
+                paymentReference: reference,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            if (bookingData.tripId) {
+                try {
+                    const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
+                    await checkAndConfirmTrip(db, bookingData.tripId);
+                } catch (e) { 
+                    console.error('Trip confirmation sync error:', e); 
+                }
+            }
         }
 
         return { success: true, bookingId };
     } catch (error: any) {
-        console.error('Verification failed:', error);
-        return { success: false, error: error.message };
+        console.error('Verification failed for reference', reference, ':', error.message);
+        return { success: false, error: error.message || 'Verification failed.' };
     }
 };
