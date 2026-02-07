@@ -23,6 +23,7 @@ export type Passenger = {
     bookingId: string;
     name: string;
     phone: string;
+    heldUntil?: number; // Timestamp (ms) until which the seat is temporarily held
 };
 
 export type Trip = {

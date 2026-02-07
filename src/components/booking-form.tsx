@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -188,16 +188,16 @@ export default function BookingForm() {
 
     try {
         const priceRuleId = `${formData.pickup}_${formData.destination}_${formData.vehicleType}`.toLowerCase().replace(/\s+/g, '-');
-        
+        const bookingDataWithFare = { ...formData, totalFare };
+
         if (isPaystackEnabled) {
-            const bookingDataWithFare = { ...formData, totalFare };
-            const cleanBookingData = {
+            const cleanBookingDataForHold = {
               name: bookingDataWithFare.name,
               email: bookingDataWithFare.email,
               phone: bookingDataWithFare.phone,
               pickup: bookingDataWithFare.pickup,
               destination: bookingDataWithFare.destination,
-              intendedDate: format(bookingDataWithFare.intendedDate, 'yyyy-MM-dd'),
+              intendedDate: bookingDataWithFare.intendedDate,
               vehicleType: bookingDataWithFare.vehicleType,
               luggageCount: bookingDataWithFare.luggageCount,
               totalFare: bookingDataWithFare.totalFare,
@@ -205,16 +205,16 @@ export default function BookingForm() {
             };
 
             const result = await initializeTransaction({
-                email: cleanBookingData.email,
-                amount: cleanBookingData.totalFare * 100, 
+                email: cleanBookingDataForHold.email,
+                amount: cleanBookingDataForHold.totalFare * 100, 
                 metadata: {
                     priceRuleId,
-                    booking_details: JSON.stringify(cleanBookingData),
                     custom_fields: [
-                        { display_name: "Customer Name", variable_name: "customer_name", value: cleanBookingData.name },
-                        { display_name: "Route", variable_name: "route", value: `${cleanBookingData.pickup} to ${cleanBookingData.destination}` }
+                        { display_name: "Customer Name", variable_name: "customer_name", value: cleanBookingDataForHold.name },
+                        { display_name: "Route", variable_name: "route", value: `${cleanBookingDataForHold.pickup} to ${cleanBookingDataForHold.destination}` }
                     ]
-                }
+                },
+                bookingData: cleanBookingDataForHold
             });
             
             if (result.status && result.data?.authorization_url) {
@@ -223,7 +223,8 @@ export default function BookingForm() {
                 throw new Error(result.message || 'Failed to initialize transaction.');
             }
         } else {
-            await createPendingBooking({ ...formData, totalFare });
+            // Bypass mode: Create hold and keep it pending
+            await createPendingBooking(bookingDataWithFare);
             setIsConfirmationOpen(true);
             form.reset();
         }

@@ -15,8 +15,12 @@ type CreateBookingResult = {
     error?: string;
 }
 
+/**
+ * Creates a 'Pending' booking and holds a seat on a trip for 15 minutes.
+ */
 export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyPolicy'> & { totalFare: number }): Promise<CreateBookingResult> => {
-    const db = getFirebaseAdmin()?.firestore();
+    const admin = getFirebaseAdmin();
+    const db = admin?.firestore();
     if (!db) return { success: false, error: "Database connection failed." };
     
     const newBookingRef = db.collection('bookings').doc();
@@ -32,7 +36,12 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     
     try {
         await newBookingRef.set(firestoreBooking);
-        await assignBookingToTrip(firestoreBooking as any);
+        
+        // Pass the firestoreBooking but convert serverTimestamp for internal use
+        await assignBookingToTrip({ 
+            ...firestoreBooking, 
+            createdAt: Date.now() 
+        } as any);
 
         const createdDoc = await newBookingRef.get();
         const createdData = createdDoc.data();
@@ -49,13 +58,20 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     }
 };
 
+/**
+ * Atomically assigns a booking to a trip, handling temporary holds.
+ */
 export async function assignBookingToTrip(bookingData: Booking) {
-    const db = getFirebaseAdmin()?.firestore();
+    const admin = getFirebaseAdmin();
+    const db = admin?.firestore();
     if (!db) throw new Error("Database connection failed.");
 
-    const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate } = bookingData;
+    const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate, status } = bookingData;
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
     
+    const HOLD_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+    const now = Date.now();
+
     try {
         let assignedTripId: string | null = null;
         
@@ -75,21 +91,44 @@ export async function assignBookingToTrip(bookingData: Booking) {
             
             const tripsSnapshot = await transaction.get(tripsQuery);
             let assigned = false;
-            const passenger: Passenger = { bookingId, name, phone };
+            
+            // Define passenger with a hold if status is Pending
+            const passenger: Passenger = { 
+                bookingId, 
+                name, 
+                phone,
+                heldUntil: status === 'Pending' ? now + HOLD_DURATION_MS : undefined
+            };
 
             for (const doc of tripsSnapshot.docs) {
                 const trip = doc.data() as Trip;
-                if (!trip.isFull) {
-                    const newCount = (trip.passengers || []).length + 1;
-                    const updates: any = { passengers: FieldValue.arrayUnion(passenger) };
-                    if (newCount >= capacity) updates.isFull = true;
-                    transaction.update(doc.ref, updates);
+                
+                // Filter out expired holds for accurate count
+                const activePassengers = (trip.passengers || []).filter(p => {
+                    if (p.heldUntil && p.heldUntil < now) {
+                        // We check the actual booking status to be safe
+                        return false; 
+                    }
+                    return true;
+                });
+
+                if (activePassengers.length < capacity) {
+                    // Update trip with new passenger and cleaned list
+                    const updatedPassengers = [...activePassengers, passenger];
+                    const isFull = updatedPassengers.length >= capacity;
+                    
+                    transaction.update(doc.ref, { 
+                        passengers: updatedPassengers,
+                        isFull: isFull 
+                    });
+                    
                     assigned = true;
                     assignedTripId = doc.id;
                     break;
                 }
             }
 
+            // Create new trip if needed and if vehicle count allows
             if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 1))) {
                 const newIndex = tripsSnapshot.size + 1;
                 const newTripId = `${priceRuleId}_${intendedDate}_${newIndex}`;
@@ -138,13 +177,21 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
     if (!tripSnap.exists) return;
 
     const trip = tripSnap.data() as Trip;
-    if (!trip.isFull) return;
     
+    // A trip is "full" if the count of Paid/Confirmed passengers equals capacity
+    // Holds are not enough to confirm a trip
     const passengerIds = trip.passengers.map(p => p.bookingId);
     if (passengerIds.length === 0) return;
 
     const bookingsSnapshot = await db.collection('bookings').where(FieldPath.documentId(), 'in', passengerIds).get();
-    const bookingsToConfirm = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Paid');
+    const paidBookings = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Paid');
+    const confirmedBookings = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Confirmed');
+    
+    const totalConfirmedOrPaid = paidBookings.length + confirmedBookings.length;
+
+    if (totalConfirmedOrPaid < trip.capacity) return;
+    
+    const bookingsToConfirm = paidBookings; // Only move 'Paid' to 'Confirmed'
 
     if (bookingsToConfirm.length === 0) return;
 

@@ -4,7 +4,7 @@
 import Paystack from 'paystack';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { assignBookingToTrip } from './create-booking-and-assign-trip';
+import { assignBookingToTrip, createPendingBooking } from './create-booking-and-assign-trip';
 
 if (!process.env.PAYSTACK_SECRET_KEY) {
   throw new Error('PAYSTACK_SECRET_KEY is not set in environment variables.');
@@ -16,16 +16,34 @@ interface InitializeTransactionArgs {
   email: string;
   amount: number;
   metadata: Record<string, any>;
+  bookingData: any; // Data for initial 'Pending' booking
 }
 
-export const initializeTransaction = async ({ email, amount, metadata }: InitializeTransactionArgs) => {
+/**
+ * Initializes a Paystack transaction after creating a 'Pending' booking to hold the seat.
+ */
+export const initializeTransaction = async ({ email, amount, metadata, bookingData }: InitializeTransactionArgs) => {
   try {
+    // 1. Create the Pending booking first to "hold" the seat
+    const pendingResult = await createPendingBooking(bookingData);
+    if (!pendingResult.success || !pendingResult.booking) {
+        throw new Error(pendingResult.error || 'Failed to hold seat for booking.');
+    }
+
+    // 2. Add the actual booking ID to the metadata
+    const updatedMetadata = {
+        ...metadata,
+        booking_id: pendingResult.booking.id,
+    };
+
+    // 3. Initialize Paystack
     const response = await paystack.transaction.initialize({
       email,
       amount: Math.round(amount),
-      metadata,
+      metadata: updatedMetadata,
       callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/callback`
     });
+
     return { status: true, data: response.data };
   } catch (error: any) {
     console.error('Paystack initialization error:', error.message);
@@ -33,6 +51,9 @@ export const initializeTransaction = async ({ email, amount, metadata }: Initial
   }
 };
 
+/**
+ * Verifies the transaction and updates the held booking to 'Paid'.
+ */
 export const verifyTransactionAndCreateBooking = async (reference: string) => {
     try {
         const verificationResponse = await paystack.transaction.verify(reference);
@@ -41,36 +62,35 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
         }
 
         const metadata = verificationResponse.data.metadata;
-        if (!metadata || !metadata.booking_details) {
-            throw new Error('Booking metadata is missing from transaction.');
+        const bookingId = metadata.booking_id;
+        
+        if (!bookingId) {
+            throw new Error('Booking ID is missing from transaction metadata.');
         }
-        
-        const bookingDetails = JSON.parse(metadata.booking_details);
 
-        const db = getFirebaseAdmin().firestore();
+        const admin = getFirebaseAdmin();
+        const db = admin.firestore();
         
-        const result = await db.runTransaction(async (transaction) => {
-            const newBookingRef = db.collection('bookings').doc();
-            const newBookingData = {
-                ...bookingDetails,
-                createdAt: FieldValue.serverTimestamp(),
-                status: 'Paid' as const,
-                paymentReference: reference,
-            };
-            
-            transaction.set(newBookingRef, newBookingData);
-            return { id: newBookingRef.id, ...newBookingData };
+        // Update the existing 'Pending' booking to 'Paid'
+        const bookingRef = db.collection('bookings').doc(bookingId);
+        await bookingRef.update({
+            status: 'Paid',
+            paymentReference: reference,
+            updatedAt: FieldValue.serverTimestamp(),
         });
-        
-        await assignBookingToTrip({
-            ...result,
-            createdAt: Date.now()
-        } as any);
 
-        return { success: true, bookingId: result.id };
+        // Trigger the assignment check (which will confirm the trip if it's now full of paid users)
+        const bookingSnap = await bookingRef.get();
+        const bookingData = bookingSnap.data();
+        if (bookingData && bookingData.tripId) {
+            const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
+            await checkAndConfirmTrip(db, bookingData.tripId);
+        }
+
+        return { success: true, bookingId: bookingId };
 
     } catch (error: any) {
-        console.error('Verification and booking creation failed:', error);
+        console.error('Verification and booking update failed:', error);
         return { success: false, error: error.message };
     }
 };
