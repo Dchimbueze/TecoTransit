@@ -17,7 +17,7 @@ if (!process.env.PAYSTACK_SECRET_KEY) {
 const paystack = Paystack(process.env.PAYSTACK_SECRET_KEY);
 
 
-export async function updateBookingStatus(bookingId: string, status: 'Cancelled'): Promise<void> {
+export async function updateBookingStatus(bookingId: string, status: Booking['status']): Promise<void> {
   const adminDb = getFirebaseAdmin()?.firestore();
   if (!adminDb) {
     throw new Error("Database connection failed.");
@@ -31,29 +31,42 @@ export async function updateBookingStatus(bookingId: string, status: 'Cancelled'
   }
   
   const bookingToUpdate = bookingSnap.data() as Booking;
+  const oldStatus = bookingToUpdate.status;
 
-  await bookingDocRef.update({ status });
+  await bookingDocRef.update({ 
+      status,
+      updatedAt: FieldValue.serverTimestamp()
+  });
 
-  // After successfully updating the status, remove the passenger from the trip
-  if (bookingToUpdate.tripId) {
-    await cleanupTrips([bookingId]);
+  // If cancelling or refunding, we must free the seat
+  if (status === 'Cancelled' || status === 'Refunded') {
+    if (bookingToUpdate.tripId) {
+      await cleanupTrips([bookingId]);
+    }
   }
 
-  try {
-    await sendBookingStatusEmail({
-        name: bookingToUpdate.name,
-        email: bookingToUpdate.email,
-        status: status,
-        bookingId: bookingId,
-        pickup: bookingToUpdate.pickup,
-        destination: bookingToUpdate.destination,
-        vehicleType: bookingToUpdate.vehicleType,
-        totalFare: bookingToUpdate.totalFare,
-    });
-  } catch (emailError) {
-    console.error("Failed to send status update email:", emailError);
-    // We don't re-throw here, as the primary action (updating status) succeeded.
-    // The admin will see the status change, but we should log this failure.
+  // If manually confirming or paying, trigger the check for full trip
+  if ((status === 'Confirmed' || status === 'Paid') && bookingToUpdate.tripId) {
+      const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
+      await checkAndConfirmTrip(adminDb, bookingToUpdate.tripId);
+  }
+
+  // Send notification for major status changes
+  if (status === 'Confirmed' || status === 'Cancelled' || status === 'Refunded') {
+    try {
+        await sendBookingStatusEmail({
+            name: bookingToUpdate.name,
+            email: bookingToUpdate.email,
+            status: status as any,
+            bookingId: bookingId,
+            pickup: bookingToUpdate.pickup,
+            destination: bookingToUpdate.destination,
+            vehicleType: bookingToUpdate.vehicleType,
+            totalFare: bookingToUpdate.totalFare,
+        });
+      } catch (emailError) {
+        console.error("Failed to send status update email:", emailError);
+      }
   }
 }
 
@@ -99,14 +112,12 @@ export async function deleteBooking(id: string): Promise<void> {
     throw new Error("Database not available");
   }
   const bookingDocRef = db.collection('bookings').doc(id);
-  // We need to get the booking data before deleting it to check for a tripId
   const bookingSnap = await bookingDocRef.get();
   
   if (bookingSnap.exists) {
       const bookingData = bookingSnap.data();
       await deleteDoc(bookingDocRef);
       
-      // Only run cleanup if the booking was actually assigned to a trip
       if (bookingData && bookingData.tripId) {
           await cleanupTrips([id]);
       }
@@ -122,7 +133,6 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
     
     let bookingsQuery = query(collection(db, 'bookings'));
 
-    // If dates are provided, add where clauses. Otherwise, it will query all bookings.
     if (startDate && endDate) {
         const startTimestamp = Timestamp.fromDate(startDate);
         const endOfDay = new Date(endDate);
@@ -142,7 +152,6 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
     }
     
     const deletedBookingIds: string[] = [];
-    
     const batches = [];
     let currentBatch = writeBatch(db);
     let currentBatchSize = 0;
@@ -166,7 +175,6 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
     }
 
     await Promise.all(batches.map(batch => batch.commit()));
-
 
     if (deletedBookingIds.length > 0) {
       const chunkSize = 100;
