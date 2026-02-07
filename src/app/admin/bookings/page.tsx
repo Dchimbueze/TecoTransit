@@ -393,17 +393,17 @@ export default function AdminBookingsPage() {
                             </AlertDialogTrigger>
                         </DropdownMenuContent>
                     </DropdownMenu>
-                     <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Custom Range</AlertDialogTitle>
-                          <AlertDialogDescription>Select a date range to permanently delete all booking records within that period.</AlertDialogDescription>
+                     <AlertDialogContent className="max-w-3xl">
+                        <AlertDialogHeader className="mb-4">
+                          <AlertDialogTitle className="text-2xl font-bold">Delete Custom Range</AlertDialogTitle>
+                          <AlertDialogDescription className="text-muted-foreground">Select a date range to permanently delete all booking records within that period.</AlertDialogDescription>
                         </AlertDialogHeader>
-                        <div className="py-4">
-                            <Calendar mode="range" selected={deleteDateRange} onSelect={setDeleteDateRange} numberOfMonths={2} />
+                        <div className="flex justify-center p-4 border rounded-md bg-muted/20">
+                            <Calendar mode="range" selected={deleteDateRange} onSelect={setDeleteDateRange} numberOfMonths={2} className="w-full" />
                         </div>
-                        <AlertDialogFooter>
+                        <AlertDialogFooter className="mt-6">
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleBulkDelete('custom')} className={cn(buttonVariants({variant: 'destructive'}))}>Delete Selected</AlertDialogAction>
+                            <AlertDialogAction onClick={() => handleBulkDelete('custom')} className={cn(buttonVariants({variant: 'destructive'}), "font-bold")}>Delete Selected</AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
