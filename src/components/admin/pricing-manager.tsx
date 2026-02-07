@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -332,30 +331,36 @@ export default function PricingManager() {
                 <FormField control={form.control} name="pickup" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Pickup Location</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger></FormControl>
-                        <SelectContent>{locations.map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+                          <SelectContent>{locations.map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                 </FormItem>
                 )} />
                 <FormField control={form.control} name="destination" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Destination</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger></FormControl>
-                        <SelectContent>{locations.filter(loc => loc !== form.watch('pickup')).map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+                          <SelectContent>{locations.filter(loc => loc !== form.watch('pickup')).map(loc => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                 </FormItem>
                 )} />
                 <FormField control={form.control} name="vehicleType" render={({ field }) => (
                 <FormItem className="sm:col-span-2">
                     <FormLabel>Vehicle Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Select a vehicle" /></SelectTrigger></FormControl>
-                    <SelectContent>{Object.values(vehicleOptions).map(v => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <FormControl>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                      <SelectTrigger><SelectValue placeholder="Select a vehicle" /></SelectTrigger>
+                      <SelectContent>{Object.values(vehicleOptions).map(v => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                 </FormItem>
                 )} />
@@ -364,7 +369,6 @@ export default function PricingManager() {
                         <FormLabel>Price (NGN)</FormLabel>
                         <FormControl>
                             <Input 
-                                id="price"
                                 type="text"
                                 inputMode="decimal" 
                                 placeholder="50,000"
@@ -380,7 +384,6 @@ export default function PricingManager() {
                         <FormLabel>No. of Vehicles</FormLabel>
                         <FormControl>
                             <Input 
-                                id="vehicleCount"
                                 type="number"
                                 inputMode="numeric" 
                                 min="0"
@@ -406,7 +409,3 @@ export default function PricingManager() {
     </Dialog>
   );
 }
-
-    
-
-    
