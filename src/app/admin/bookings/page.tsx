@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History, Briefcase, Ticket, X, Loader2 } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History, Briefcase, Ticket, X, Loader2, Play } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import { getAllBookings } from "@/lib/data";
 import { getStatusVariant } from "@/lib/utils";
 import { deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking, cancelBooking } from "@/app/actions/booking-actions";
 import { synchronizeAndCreateTrips } from "@/app/actions/synchronize-bookings";
+import { rescheduleUnderfilledTrips } from "@/app/actions/reschedule-bookings";
 
 type BulkDeleteMode = 'all' | '7d' | '30d' | 'custom';
 
@@ -76,12 +77,12 @@ function BookingsPageSkeleton() {
 
 const getStatusIcon = (status: Booking['status']) => {
     switch (status) {
-        case 'Confirmed': return <CheckCircle className="h-4 w-4 text-green-500" />;
-        case 'Cancelled': return <Ban className="h-4 w-4 text-destructive" />;
-        case 'Paid': return <HandCoins className="h-4 w-4 text-blue-500" />;
-        case 'Pending': return <CircleDot className="h-4 w-4 text-amber-500" />;
-        case 'Refunded': return <CreditCard className="h-4 w-4 text-slate-500" />;
-        default: return <Check className="h-4 w-4" />;
+        case 'Confirmed': return <CheckCircle className="h-3 w-3" />;
+        case 'Cancelled': return <Ban className="h-3 w-3" />;
+        case 'Paid': return <HandCoins className="h-3 w-3" />;
+        case 'Pending': return <CircleDot className="h-3 w-3" />;
+        case 'Refunded': return <CreditCard className="h-3 w-3" />;
+        default: return <Check className="h-3 w-3" />;
     }
 };
 
@@ -200,6 +201,22 @@ export default function AdminBookingsPage() {
     }
   }
 
+  const handleRunRescheduler = async () => {
+    setIsProcessing(prev => ({...prev, rescheduler: true}));
+    try {
+        const result = await rescheduleUnderfilledTrips();
+        toast({ 
+            title: "Rescheduler Complete", 
+            description: `Processed ${result.totalPassengersToProcess} passengers. ${result.rescheduledCount} rescheduled.` 
+        });
+        fetchBookings();
+    } catch (e: any) {
+        toast({ variant: "destructive", title: "Rescheduler Error", description: e.message });
+    } finally {
+        setIsProcessing(prev => ({...prev, rescheduler: false}));
+    }
+  }
+
   const handleManualReschedule = async () => {
     if (!selectedBooking || !newRescheduleDate) return;
     setIsProcessing(prev => ({...prev, reschedule: true}));
@@ -240,18 +257,30 @@ export default function AdminBookingsPage() {
   if (loading) return <BookingsPageSkeleton />;
 
   return (
-    <div className="space-y-8">
-        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-            <div>
-                <h1 className="text-3xl font-bold font-headline">Manage Bookings</h1>
-                <p className="text-muted-foreground">Monitor reservations and trip allocations.</p>
+    <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row items-end justify-between gap-4">
+            <div className="space-y-1">
+                <h1 className="text-2xl font-bold font-headline tracking-tight">All Bookings ({filteredBookings.length})</h1>
+                <p className="text-sm text-muted-foreground">Use special actions for bulk operations on bookings.</p>
             </div>
-             <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={fetchBookings}><RefreshCw className="h-4 w-4" /></Button>
+             <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleSyncAll} disabled={isProcessing.syncAll}>
+                    {isProcessing.syncAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                    Synchronize
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleRunRescheduler} disabled={isProcessing.rescheduler}>
+                    {isProcessing.rescheduler ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}
+                    Run Rescheduler
+                </Button>
+                <Button variant="outline" size="sm" onClick={downloadCSV}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export CSV
+                </Button>
+                <Button variant="outline" size="icon" className="h-9 w-9" onClick={fetchBookings}><RefreshCw className="h-4 w-4" /></Button>
                 <AlertDialog open={isCustomDeleteOpen} onOpenChange={setIsCustomDeleteOpen}>
                     <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="destructive" size="icon"><Trash2 className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent>
+                        <DropdownMenuTrigger asChild><Button variant="destructive" size="icon" className="h-9 w-9"><Trash2 className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
                              <AlertDialog>
                                 <AlertDialogTrigger asChild><DropdownMenuItem onSelect={e => e.preventDefault()}>Delete All</DropdownMenuItem></AlertDialogTrigger>
                                 <AlertDialogContent>
@@ -274,33 +303,73 @@ export default function AdminBookingsPage() {
             </div>
         </div>
       
-        <Card>
-            <CardHeader>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <CardTitle>Bookings ({filteredBookings.length})</CardTitle>
-                     <div className="flex items-center gap-2 w-full lg:w-auto">
-                        <Button variant="outline" size="sm" onClick={handleSyncAll} disabled={isProcessing.syncAll}><Sparkles className="mr-2 h-4 w-4" /> Sync All</Button>
-                        <Button variant="outline" size="sm" onClick={downloadCSV}><Download className="mr-2 h-4 w-4" /> CSV</Button>
-                    </div>
-                </div>
-                <div className="mt-4 flex flex-col sm:flex-row items-center gap-2">
-                    <div className="relative w-full sm:max-w-xs"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Search..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
-                    <Select value={statusFilter} onValueChange={v => setStatusFilter(v as any)}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="All">All Statuses</SelectItem><SelectItem value="Confirmed">Confirmed</SelectItem><SelectItem value="Paid">Paid</SelectItem><SelectItem value="Pending">Pending</SelectItem><SelectItem value="Cancelled">Cancelled</SelectItem><SelectItem value="Refunded">Refunded</SelectItem></SelectContent></Select>
-                </div>
-            </CardHeader>
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative w-full sm:max-w-xs">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search by name, email, ID..." className="pl-8 h-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
+            <Select value={statusFilter} onValueChange={v => setStatusFilter(v as any)}>
+                <SelectTrigger className="w-full sm:w-[180px] h-9">
+                    <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="All">All Statuses</SelectItem>
+                    <SelectItem value="Confirmed">Confirmed</SelectItem>
+                    <SelectItem value="Paid">Paid</SelectItem>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="Cancelled">Cancelled</SelectItem>
+                    <SelectItem value="Refunded">Refunded</SelectItem>
+                </SelectContent>
+            </Select>
+        </div>
+
+        <Card className="border-none shadow-none bg-transparent">
             <CardContent className="p-0">
                 <Table>
-                    <TableHeader><TableRow><TableHead className="pl-4">Customer</TableHead><TableHead>Route</TableHead><TableHead>Date</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Actions</TableHead></TableRow></TableHeader>
+                    <TableHeader className="bg-muted/30">
+                        <TableRow>
+                            <TableHead className="pl-4 font-semibold">Customer</TableHead>
+                            <TableHead className="font-semibold">Route</TableHead>
+                            <TableHead className="font-semibold">Intended Date</TableHead>
+                            <TableHead className="font-semibold">Status</TableHead>
+                            <TableHead className="pr-4 text-right font-semibold">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
                     <TableBody>
-                        {filteredBookings.map(b => (
-                            <TableRow key={b.id}>
-                                <TableCell className="pl-4"><div>{b.name}</div><div className="text-xs text-muted-foreground">{b.email}</div></TableCell>
-                                <TableCell className="text-sm">{b.pickup} → {b.destination}</TableCell>
-                                <TableCell className="text-sm">{format(parseISO(b.intendedDate), 'MMM dd, yyyy')}</TableCell>
-                                <TableCell><Badge variant={getStatusVariant(b.status)} className="gap-1">{getStatusIcon(b.status)} {b.status}</Badge></TableCell>
-                                <TableCell className="pr-4 text-right"><Button variant="ghost" size="sm" onClick={() => openDialog(b.id)}>Manage</Button></TableCell>
+                        {filteredBookings.length > 0 ? (
+                            filteredBookings.map(b => (
+                                <TableRow key={b.id} className="hover:bg-muted/20 border-b border-muted/30">
+                                    <TableCell className="pl-4 py-3">
+                                        <div className="font-bold text-sm">{b.name}</div>
+                                        <div className="text-xs text-muted-foreground">{b.email}</div>
+                                    </TableCell>
+                                    <TableCell className="text-xs font-medium">
+                                        <div>{b.pickup}</div>
+                                        <div className="text-muted-foreground">to {b.destination}</div>
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                        {format(parseISO(b.intendedDate), 'MMM dd, yyyy')}
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge variant={getStatusVariant(b.status)} className="gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                                            <div className={cn("w-1.5 h-1.5 rounded-full", 
+                                                b.status === 'Paid' ? "bg-blue-400" : 
+                                                b.status === 'Confirmed' ? "bg-green-400" : 
+                                                b.status === 'Pending' ? "bg-amber-400" : "bg-destructive/70"
+                                            )}></div>
+                                            {b.status}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="pr-4 text-right">
+                                        <Button variant="ghost" size="sm" className="font-bold hover:bg-muted/50" onClick={() => openDialog(b.id)}>View</Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        ) : (
+                            <TableRow>
+                                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No bookings found.</TableCell>
                             </TableRow>
-                        ))}
+                        )}
                     </TableBody>
                 </Table>
             </CardContent>
@@ -320,46 +389,85 @@ export default function AdminBookingsPage() {
                         <div className="grid sm:grid-cols-2 gap-12">
                             <div className="space-y-4">
                                 <h3 className="text-lg font-bold">Customer</h3>
-                                <div className="space-y-3 text-sm font-medium"><div className="flex items-center gap-3"><User className="h-5 w-5 text-muted-foreground" /> {selectedBooking.name}</div><div className="flex items-center gap-3"><Mail className="h-5 w-5 text-muted-foreground" /> {selectedBooking.email}</div><div className="flex items-center gap-3"><Phone className="h-5 w-5 text-muted-foreground" /> {selectedBooking.phone}</div></div>
+                                <div className="space-y-3 text-sm font-medium">
+                                    <div className="flex items-center gap-3"><User className="h-5 w-5 text-muted-foreground" /> {selectedBooking.name}</div>
+                                    <div className="flex items-center gap-3"><Mail className="h-5 w-5 text-muted-foreground" /> {selectedBooking.email}</div>
+                                    <div className="flex items-center gap-3"><Phone className="h-5 w-5 text-muted-foreground" /> {selectedBooking.phone}</div>
+                                </div>
                             </div>
                             <div className="space-y-4">
                                 <h3 className="text-lg font-bold">Trip</h3>
-                                <div className="space-y-3 text-sm font-medium"><div className="flex items-center gap-3"><MapPin className="h-5 w-5 text-muted-foreground" /> {selectedBooking.pickup} → {selectedBooking.destination}</div><div className="flex items-center gap-3">{selectedBooking.vehicleType.includes('Bus') ? <Bus className="h-5 w-5" /> : <Car className="h-5 w-5" />} {selectedBooking.vehicleType}</div><div className="flex items-center gap-3"><Briefcase className="h-5 w-5 text-muted-foreground" /> {selectedBooking.luggageCount} bag(s)</div></div>
+                                <div className="space-y-3 text-sm font-medium">
+                                    <div className="flex items-center gap-3"><MapPin className="h-5 w-5 text-muted-foreground" /> {selectedBooking.pickup} → {selectedBooking.destination}</div>
+                                    <div className="flex items-center gap-3">{selectedBooking.vehicleType.includes('Bus') ? <Bus className="h-5 w-5" /> : <Car className="h-5 w-5" />} {selectedBooking.vehicleType}</div>
+                                    <div className="flex items-center gap-3"><Briefcase className="h-5 w-5 text-muted-foreground" /> {selectedBooking.luggageCount} bag(s)</div>
+                                </div>
                             </div>
                         </div>
                         <div className="space-y-4">
                             <h3 className="text-lg font-bold">Preferences</h3>
-                            <div className="grid sm:grid-cols-2 gap-6 text-sm font-medium"><div className="flex items-center gap-3"><CalendarIcon className="h-5 w-5 text-muted-foreground" /> <div><div className="text-xs text-muted-foreground">Intended Date</div>{format(parseISO(selectedBooking.intendedDate), 'PPP')}</div></div><div className="flex items-center gap-3"><History className="h-5 w-5 text-muted-foreground" /> <div><div className="text-xs text-muted-foreground">Rescheduled</div>{selectedBooking.rescheduledCount || 0} time(s)</div></div></div>
+                            <div className="grid sm:grid-cols-2 gap-6 text-sm font-medium">
+                                <div className="flex items-center gap-3">
+                                    <CalendarIcon className="h-5 w-5 text-muted-foreground" /> 
+                                    <div><div className="text-xs text-muted-foreground">Intended Date</div>{format(parseISO(selectedBooking.intendedDate), 'PPP')}</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <History className="h-5 w-5 text-muted-foreground" /> 
+                                    <div><div className="text-xs text-muted-foreground">Rescheduled</div>{selectedBooking.rescheduledCount || 0} time(s)</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div className="md:col-span-1 bg-muted/40 p-8 space-y-10 border-l">
                         <div className="space-y-4">
                             <h3 className="text-lg font-bold">Payment Summary</h3>
-                            <div className="space-y-1"><p className="text-xs text-muted-foreground font-semibold uppercase">Total Fare</p><p className="text-5xl font-black text-primary">₦{selectedBooking.totalFare.toLocaleString()}</p></div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground font-semibold uppercase">Total Fare</p>
+                                <p className="text-5xl font-black text-primary">₦{selectedBooking.totalFare.toLocaleString()}</p>
+                            </div>
                         </div>
                         <div className="space-y-4 pt-6 border-t">
                             <h3 className="text-lg font-bold">Manual Reschedule</h3>
-                            <Popover><PopoverTrigger asChild><Button variant="outline" className="w-full justify-start"><CalendarIcon className="mr-2 h-4 w-4" />{newRescheduleDate ? format(newRescheduleDate, 'PPP') : "Select new date"}</Button></PopoverTrigger><PopoverContent className="w-auto p-0" align="end"><Calendar mode="single" selected={newRescheduleDate} onSelect={setNewRescheduleDate} initialFocus /></PopoverContent></Popover>
-                            <Button className="w-full font-bold" disabled={!newRescheduleDate || isProcessing.reschedule} onClick={() => setIsRescheduleConfirmOpen(true)}>{isProcessing.reschedule ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <History className="mr-2 h-4 w-4" />} Reschedule</Button>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-start"><CalendarIcon className="mr-2 h-4 w-4" />{newRescheduleDate ? format(newRescheduleDate, 'PPP') : "Select new date"}</Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="end">
+                                    <Calendar mode="single" selected={newRescheduleDate} onSelect={setNewRescheduleDate} initialFocus />
+                                </PopoverContent>
+                            </Popover>
+                            <Button className="w-full font-bold" disabled={!newRescheduleDate || isProcessing.reschedule} onClick={() => setIsRescheduleConfirmOpen(true)}>
+                                {isProcessing.reschedule ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <History className="mr-2 h-4 w-4" />} 
+                                Reschedule
+                            </Button>
                         </div>
                     </div>
                 </div>
                 <DialogFooter className="p-6 border-t bg-card flex justify-between items-center">
                      <AlertDialog>
                         <AlertDialogTrigger asChild><Button variant="ghost" className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-4 w-4" /> Delete</Button></AlertDialogTrigger>
-                        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete Record?</AlertDialogTitle><AlertDialogDescription>This permanently removes the booking. Seats will be freed.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep</AlertDialogCancel><AlertDialogAction onClick={handleDeleteBooking} className={cn(buttonVariants({variant:'destructive'}))}>Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                        <AlertDialogContent>
+                            <AlertDialogHeader><AlertDialogTitle>Delete Record?</AlertDialogTitle><AlertDialogDescription>This permanently removes the booking. Seats will be freed.</AlertDialogDescription></AlertDialogHeader>
+                            <AlertDialogFooter><AlertDialogCancel>Keep</AlertDialogCancel><AlertDialogAction onClick={handleDeleteBooking} className={cn(buttonVariants({variant:'destructive'}))}>Delete</AlertDialogAction></AlertDialogFooter>
+                        </AlertDialogContent>
                     </AlertDialog>
                     <div className="flex items-center gap-3">
                          <AlertDialog>
                             <AlertDialogTrigger asChild><Button variant="secondary" className="font-bold" disabled={selectedBooking.status === 'Cancelled' || isProcessing.cancel}><Ban className="mr-2 h-4 w-4" /> Cancel Booking</Button></AlertDialogTrigger>
-                            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Cancel this booking?</AlertDialogTitle><AlertDialogDescription>This marks the booking as cancelled and frees the seat.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Go Back</AlertDialogCancel><AlertDialogAction onClick={handleCancelBooking}>Confirm Cancellation</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                            <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>Cancel this booking?</AlertDialogTitle><AlertDialogDescription>This marks the booking as cancelled and frees the seat.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogFooter><AlertDialogCancel>Go Back</AlertDialogCancel><AlertDialogAction onClick={handleCancelBooking}>Confirm Cancellation</AlertDialogAction></AlertDialogFooter>
+                            </AlertDialogContent>
                         </AlertDialog>
                         <Button variant="ghost" size="icon" onClick={() => setIsManageDialogOpen(false)}><X className="h-4 w-4" /></Button>
                     </div>
                 </DialogFooter>
             </DialogContent>
             <AlertDialog open={isRescheduleConfirmOpen} onOpenChange={setIsRescheduleConfirmOpen}>
-                <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reschedule Passenger?</AlertDialogTitle><AlertDialogDescription>Moving to {newRescheduleDate ? format(newRescheduleDate, 'PPP') : ''}. The customer will be notified.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Abort</AlertDialogCancel><AlertDialogAction onClick={handleManualReschedule}>Confirm Change</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                <AlertDialogContent>
+                    <AlertDialogHeader><AlertDialogTitle>Reschedule Passenger?</AlertDialogTitle><AlertDialogDescription>Moving to {newRescheduleDate ? format(newRescheduleDate, 'PPP') : ''}. The customer will be notified.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogFooter><AlertDialogCancel>Abort</AlertDialogCancel><AlertDialogAction onClick={handleManualReschedule}>Confirm Change</AlertDialogAction></AlertDialogFooter>
+                </AlertDialogContent>
             </AlertDialog>
         </Dialog>
       )}
