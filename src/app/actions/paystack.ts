@@ -1,3 +1,4 @@
+
 'use server';
 
 import Paystack from 'paystack';
@@ -67,47 +68,68 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
  */
 export const verifyTransactionAndCreateBooking = async (reference: string) => {
     try {
+        console.log(`Starting payment verification for reference: ${reference}`);
+        
         if (!paystack) {
-            throw new Error('Paystack is not configured on the server.');
+            throw new Error('Paystack is not configured on the server. Please check environment variables.');
         }
 
         const verificationResponse = await paystack.transaction.verify(reference);
-        if (!verificationResponse || !verificationResponse.data || verificationResponse.data.status !== 'success') {
-            throw new Error(verificationResponse?.message || 'Payment verification failed.');
+        
+        if (!verificationResponse || !verificationResponse.data) {
+            throw new Error('No verification data received from Paystack.');
+        }
+
+        if (verificationResponse.data.status !== 'success') {
+            console.error('Payment not successful:', verificationResponse.data);
+            throw new Error(verificationResponse.data.gateway_response || 'Payment verification failed.');
         }
 
         const metadata = verificationResponse.data.metadata;
-        const bookingId = metadata.booking_id;
+        const bookingId = metadata?.booking_id;
         
         if (!bookingId) {
-            throw new Error('Booking ID is missing from transaction metadata.');
+            throw new Error('Booking ID is missing from transaction metadata. This is a critical error.');
         }
 
         const admin = getFirebaseAdmin();
         const db = admin?.firestore();
         
         if (!db) {
-            throw new Error('Database connection failed during verification.');
+            throw new Error('Database connection failed during verification process.');
         }
         
         const bookingRef = db.collection('bookings').doc(bookingId);
+        const bookingSnap = await bookingRef.get();
+
+        if (!bookingSnap.exists) {
+            throw new Error(`Booking with ID ${bookingId} not found in database.`);
+        }
+
         await bookingRef.update({
             status: 'Paid',
             paymentReference: reference,
             updatedAt: FieldValue.serverTimestamp(),
         });
 
-        const bookingSnap = await bookingRef.get();
-        const bookingData = bookingSnap.data();
-        if (bookingData && bookingData.tripId) {
-            const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
-            await checkAndConfirmTrip(db, bookingData.tripId);
+        const updatedBookingData = bookingSnap.data();
+        if (updatedBookingData && updatedBookingData.tripId) {
+            try {
+                const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
+                await checkAndConfirmTrip(db, updatedBookingData.tripId);
+            } catch (confirmError) {
+                console.error('Non-critical error: Booking was paid but trip confirmation failed.', confirmError);
+                // We don't fail the whole verification if just the confirmation logic hits an edge case
+            }
         }
 
         return { success: true, bookingId: bookingId };
 
     } catch (error: any) {
-        console.error('Verification and booking update failed:', error);
-        return { success: false, error: error.message || 'An internal server error occurred during payment verification.' };
+        console.error('Verification and booking update failed critically:', error);
+        return { 
+            success: false, 
+            error: error.message || 'An internal server error occurred during payment verification.' 
+        };
     }
 };
