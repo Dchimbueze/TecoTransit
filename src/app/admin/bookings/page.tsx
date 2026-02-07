@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
@@ -15,7 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History, Briefcase, Ticket, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -24,7 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { getAllBookings } from "@/lib/data";
 import { getStatusVariant } from "@/lib/utils";
-import { deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking } from "@/app/actions/booking-actions";
+import { deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking, cancelBooking } from "@/app/actions/booking-actions";
 import { synchronizeAndCreateTrips } from "@/app/actions/synchronize-bookings";
 import { rescheduleUnderfilledTrips } from "@/app/actions/reschedule-bookings";
 
@@ -102,6 +101,7 @@ export default function AdminBookingsPage() {
 
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRescheduling, setIsRescheduling] = useState(false);
@@ -170,6 +170,25 @@ export default function AdminBookingsPage() {
         setIsDeleting(false);
     }
   };
+
+  const handleCancelBooking = async () => {
+    if (!selectedBooking) return;
+    setIsCancelling(true);
+    try {
+        const result = await cancelBooking(selectedBooking.id);
+        if (result.success) {
+            toast({ title: "Booking Cancelled", description: "The booking status has been updated to Cancelled." });
+            setIsManageDialogOpen(false);
+            fetchBookings();
+        } else {
+            throw new Error(result.error);
+        }
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Cancellation Failed", description: error.message });
+    } finally {
+        setIsCancelling(false);
+    }
+  }
   
   const handleBulkDelete = async (mode: BulkDeleteMode) => {
     let from: Date | null = null;
@@ -464,59 +483,134 @@ export default function AdminBookingsPage() {
 
       {selectedBooking && (
         <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
-            <DialogContent className="p-0 max-w-4xl max-h-[90vh] flex flex-col">
-                <DialogHeader className="p-6 border-b">
+            <DialogContent className="p-0 max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border-none shadow-2xl">
+                <DialogHeader className="p-6 bg-card border-b">
                     <div className="flex items-center justify-between">
-                        <DialogTitle>Booking Details: {selectedBooking.id.substring(0,8)}</DialogTitle>
-                        <Badge variant={getStatusVariant(selectedBooking.status)}>{selectedBooking.status}</Badge>
+                        <div>
+                            <DialogTitle className="text-2xl font-bold">Manage Booking: {selectedBooking.id}</DialogTitle>
+                            <p className="text-sm text-muted-foreground mt-1">Created on {format(selectedBooking.createdAt, 'MMMM do, yyyy h:mm a')}</p>
+                        </div>
+                        <Badge variant={getStatusVariant(selectedBooking.status)} className="px-4 py-1 text-sm gap-2">
+                           <div className={cn("w-2 h-2 rounded-full", 
+                                selectedBooking.status === 'Paid' ? "bg-blue-500" : 
+                                selectedBooking.status === 'Confirmed' ? "bg-green-500" : 
+                                selectedBooking.status === 'Pending' ? "bg-amber-500 animate-pulse" : "bg-destructive")}></div>
+                            {selectedBooking.status}
+                        </Badge>
                     </div>
                 </DialogHeader>
-                <div className="grid md:grid-cols-3 flex-1 overflow-y-auto">
-                     <div className="md:col-span-2 p-6 space-y-6">
-                        <div className="grid sm:grid-cols-2 gap-6">
-                            <div className="space-y-3">
-                                <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">Customer</h3>
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex items-center gap-2"><User className="h-4 w-4" /> {selectedBooking.name}</div>
-                                    <div className="flex items-center gap-2"><Mail className="h-4 w-4" /> {selectedBooking.email}</div>
-                                    <div className="flex items-center gap-2"><Phone className="h-4 w-4" /> {selectedBooking.phone}</div>
+                
+                <div className="grid md:grid-cols-3 flex-1 overflow-y-auto bg-background">
+                     <div className="md:col-span-2 p-8 space-y-10">
+                        <div className="grid sm:grid-cols-2 gap-12">
+                            {/* Customer Section */}
+                            <div className="space-y-4">
+                                <h3 className="text-lg font-bold tracking-tight">Customer</h3>
+                                <div className="space-y-3 text-sm font-medium">
+                                    <div className="flex items-center gap-3"><User className="h-5 w-5 text-muted-foreground" /> {selectedBooking.name}</div>
+                                    <div className="flex items-center gap-3"><Mail className="h-5 w-5 text-muted-foreground" /> {selectedBooking.email}</div>
+                                    <div className="flex items-center gap-3"><Phone className="h-5 w-5 text-muted-foreground" /> {selectedBooking.phone}</div>
                                 </div>
                             </div>
-                            <div className="space-y-3">
-                                <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">Trip</h3>
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex items-center gap-2"><MapPin className="h-4 w-4" /> {selectedBooking.pickup} to {selectedBooking.destination}</div>
-                                    <div className="flex items-center gap-2"><VehicleIcon className="h-4 w-4" /> {selectedBooking.vehicleType}</div>
-                                    <div className="flex items-center gap-2"><CalendarIcon className="h-4 w-4" /> {format(parseISO(selectedBooking.intendedDate), 'PPP')}</div>
+                            
+                            {/* Trip Section */}
+                            <div className="space-y-4">
+                                <h3 className="text-lg font-bold tracking-tight">Trip</h3>
+                                <div className="space-y-3 text-sm font-medium">
+                                    <div className="flex items-center gap-3"><MapPin className="h-5 w-5 text-muted-foreground" /> {selectedBooking.pickup} to {selectedBooking.destination}</div>
+                                    <div className="flex items-center gap-3"><VehicleIcon className="h-5 w-5 text-muted-foreground" /> {selectedBooking.vehicleType}</div>
+                                    <div className="flex items-center gap-3"><Briefcase className="h-5 w-5 text-muted-foreground" /> {selectedBooking.luggageCount} bag(s)</div>
+                                    {selectedBooking.tripId && (
+                                        <div className="flex items-start gap-3">
+                                            <Ticket className="h-5 w-5 text-muted-foreground mt-0.5" /> 
+                                            <div className="text-xs">
+                                                <div className="text-muted-foreground">Trip ID:</div>
+                                                <div className="font-mono break-all">{selectedBooking.tripId}</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Preferences Section */}
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-bold tracking-tight">Preferences</h3>
+                            <div className="grid sm:grid-cols-2 gap-6 text-sm font-medium">
+                                <div className="flex items-center gap-3">
+                                    <CalendarIcon className="h-5 w-5 text-muted-foreground" /> 
+                                    <div>
+                                        <div className="text-xs text-muted-foreground">Intended Date:</div>
+                                        <div>{format(parseISO(selectedBooking.intendedDate), 'MMMM do, yyyy')}</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <History className="h-5 w-5 text-muted-foreground" /> 
+                                    <div>
+                                        <div className="text-xs text-muted-foreground">Reschedule OK:</div>
+                                        <div>{selectedBooking.allowReschedule ? 'Yes' : 'No'}</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <RefreshCw className="h-5 w-5 text-muted-foreground" /> 
+                                    <div>
+                                        <div className="text-xs text-muted-foreground">Rescheduled:</div>
+                                        <div>{selectedBooking.rescheduledCount || 0} time(s)</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div className="md:col-span-1 bg-muted/30 p-6 space-y-6">
+
+                    {/* Right Column - Payment & Reschedule */}
+                    <div className="md:col-span-1 bg-muted/40 p-8 space-y-10 border-l">
                         <div className="space-y-4">
-                            <h3 className="font-semibold">Financials</h3>
-                            <div className="bg-background p-4 rounded-lg border shadow-sm">
-                                <p className="text-xs text-muted-foreground">Total Fare</p>
-                                <p className="text-2xl font-bold">₦{selectedBooking.totalFare.toLocaleString()}</p>
+                            <h3 className="text-lg font-bold tracking-tight">Payment Details</h3>
+                            <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground font-semibold uppercase">Amount Paid</p>
+                                <p className="text-5xl font-black text-primary">₦{selectedBooking.totalFare.toLocaleString()}</p>
                             </div>
                             {selectedBooking.paymentReference && (
-                                <div className="text-xs font-mono break-all opacity-70">
+                                <div className="text-[10px] font-mono text-muted-foreground break-all opacity-60">
                                     Ref: {selectedBooking.paymentReference}
                                 </div>
                             )}
                         </div>
-                        <Separator />
-                        <div className="space-y-4">
-                            <h3 className="font-semibold">Manual Reschedule</h3>
-                            <Calendar mode="single" selected={newRescheduleDate} onSelect={setNewRescheduleDate} />
-                            <Button className="w-full" disabled={!newRescheduleDate} onClick={() => setIsRescheduleConfirmOpen(true)}>Update Date</Button>
+
+                        <div className="space-y-4 pt-6">
+                            <h3 className="text-lg font-bold tracking-tight">Manual Reschedule</h3>
+                            <div className="space-y-4">
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-background">
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {newRescheduleDate ? format(newRescheduleDate, 'PPP') : "Select new date"}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="end">
+                                        <Calendar mode="single" selected={newRescheduleDate} onSelect={setNewRescheduleDate} initialFocus />
+                                    </PopoverContent>
+                                </Popover>
+                                <Button 
+                                    className="w-full font-bold" 
+                                    disabled={!newRescheduleDate || isProcessing.reschedule} 
+                                    onClick={() => setIsRescheduleConfirmOpen(true)}
+                                >
+                                    {isProcessing.reschedule ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <History className="mr-2 h-4 w-4" />}
+                                    Reschedule
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <DialogFooter className="p-6 border-t bg-muted/10 flex justify-between items-center sm:justify-between">
+
+                <DialogFooter className="p-6 border-t bg-card flex justify-between items-center sm:justify-between">
                      <AlertDialog>
                         <AlertDialogTrigger asChild>
-                            <Button variant="ghost" className="text-destructive">Delete Permanently</Button>
+                            <Button variant="ghost" className="text-destructive hover:bg-destructive/10">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Booking
+                            </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                             <AlertDialogHeader><AlertDialogTitle>Delete Record?</AlertDialogTitle><AlertDialogDescription>This removes the booking and frees any seats. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
@@ -526,10 +620,29 @@ export default function AdminBookingsPage() {
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
-                    <Button variant="secondary" onClick={() => setIsManageDialogOpen(false)}>Done</Button>
+
+                    <div className="flex items-center gap-3">
+                         <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="secondary" className="font-bold" disabled={selectedBooking.status === 'Cancelled' || isCancelling}>
+                                    <Ban className="mr-2 h-4 w-4" />
+                                    Cancel Booking
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>Cancel this booking?</AlertDialogTitle><AlertDialogDescription>This will mark the booking as cancelled and free up the seat on the trip. The customer will be notified.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Go Back</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleCancelBooking}>Confirm Cancellation</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                        <Button variant="ghost" size="icon" onClick={() => setIsManageDialogOpen(false)}><X className="h-4 w-4" /></Button>
+                    </div>
                 </DialogFooter>
             </DialogContent>
             
+            {/* Confirm Reschedule Dialog */}
             <AlertDialog open={isRescheduleConfirmOpen} onOpenChange={setIsRescheduleConfirmOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>

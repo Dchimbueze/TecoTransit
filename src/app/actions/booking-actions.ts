@@ -1,8 +1,7 @@
-
 'use server';
 
 import { query, collection, where, Timestamp, writeBatch } from 'firebase/firestore';
-import { sendManualRescheduleEmail } from './send-email';
+import { sendManualRescheduleEmail, sendBookingStatusEmail } from './send-email';
 import { cleanupTrips } from './cleanup-trips';
 import type { Booking } from '@/lib/types';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
@@ -26,6 +25,49 @@ export async function deleteBooking(id: string): Promise<void> {
           await cleanupTrips([id]);
       }
   }
+}
+
+export async function cancelBooking(id: string): Promise<{success: boolean; error?: string}> {
+    const db = getFirebaseAdmin()?.firestore();
+    if (!db) {
+        return { success: false, error: "Database not available" };
+    }
+
+    try {
+        const bookingRef = db.collection('bookings').doc(id);
+        const bookingSnap = await bookingRef.get();
+        
+        if (!bookingSnap.exists) {
+            throw new Error("Booking not found.");
+        }
+
+        const bookingData = bookingSnap.data() as Booking;
+        
+        await bookingRef.update({
+            status: 'Cancelled',
+            updatedAt: FieldValue.serverTimestamp()
+        });
+
+        if (bookingData.tripId) {
+            await cleanupTrips([id]);
+        }
+
+        await sendBookingStatusEmail({
+            name: bookingData.name,
+            email: bookingData.email,
+            status: 'Cancelled',
+            bookingId: id,
+            pickup: bookingData.pickup,
+            destination: bookingData.destination,
+            vehicleType: bookingData.vehicleType,
+            totalFare: bookingData.totalFare
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("Cancel booking error:", error);
+        return { success: false, error: error.message };
+    }
 }
 
 export async function deleteBookingsInRange(startDate: Date | null, endDate: Date | null): Promise<number> {
@@ -135,7 +177,7 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
             transaction.update(bookingRef, {
                 intendedDate: newDate,
                 tripId: FieldValue.delete(),
-                rescheduledCount: FieldValue.increment(bookingData.rescheduledCount ? 1 : 1) 
+                rescheduledCount: FieldValue.increment(1) 
             });
         });
 
