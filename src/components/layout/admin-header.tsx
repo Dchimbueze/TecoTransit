@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -9,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetTitle } from "../ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from "../ui/sheet";
 import { ThemeToggle } from "../theme-toggle";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { ClientOnly } from "../client-only";
@@ -84,7 +83,9 @@ export default function AdminHeader() {
              </ClientOnly>
           </nav>
            <div className="hidden md:flex items-center gap-2">
-             <ThemeToggle />
+             <ClientOnly>
+                <ThemeToggle />
+             </ClientOnly>
              <Button variant="ghost" size="sm" onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Logout
@@ -93,8 +94,8 @@ export default function AdminHeader() {
           
           {/* Mobile Navigation */}
           <div className="md:hidden flex items-center gap-2">
-            <ThemeToggle />
             <ClientOnly>
+                <ThemeToggle />
                 <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                     <Button variant="outline" size="icon">

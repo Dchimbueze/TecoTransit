@@ -28,6 +28,7 @@ import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { PriceRule, SeatAvailability } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ClientOnly } from './client-only';
 
 
 const bookingSchema = z.object({
@@ -261,7 +262,7 @@ export default function BookingForm() {
 
 
   return (
-    <>
+    <ClientOnly>
     <Card className="w-full shadow-2xl shadow-primary/10">
        <CardHeader>
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 text-center sm:text-left">
@@ -529,6 +530,6 @@ export default function BookingForm() {
         setIsConfirmationOpen(false);
       }}
     />
-    </>
+    </ClientOnly>
   );
 }
