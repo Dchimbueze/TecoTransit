@@ -1,4 +1,3 @@
-
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
@@ -51,6 +50,7 @@ export async function getSeatAvailability(
             const trip = doc.data() as Trip;
             // Only count active passengers (not expired holds)
             const activePassengers = (trip.passengers || []).filter(p => {
+                // If it's a confirmed/paid booking, it won't have heldUntil
                 if (p.heldUntil && p.heldUntil < now) {
                     return false;
                 }

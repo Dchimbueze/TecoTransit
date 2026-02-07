@@ -1,4 +1,3 @@
-
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
@@ -6,21 +5,17 @@ import type { Trip } from "@/lib/types";
 import { FieldValue } from "firebase-admin/firestore";
 
 /**
- * Removes passengers from trips if their booking ID is in the provided list.
- * This is used to maintain data consistency after bookings are deleted.
+ * Removes passengers from trips if their booking ID is in the provided list
+ * OR if their temporary seat hold has expired.
  * @param deletedBookingIds - An array of booking IDs that have been deleted.
  */
-export async function cleanupTrips(deletedBookingIds: string[]) {
-    if (!deletedBookingIds || deletedBookingIds.length === 0) {
-        return { success: true, message: "No booking IDs provided for cleanup." };
-    }
-
+export async function cleanupTrips(deletedBookingIds: string[] = []) {
     const db = getFirebaseAdmin()?.firestore();
     if (!db) {
         throw new Error("Database connection failed.");
     }
     
-    // Create a Set for efficient lookup
+    const now = Date.now();
     const deletedIdsSet = new Set(deletedBookingIds);
 
     try {
@@ -38,10 +33,16 @@ export async function cleanupTrips(deletedBookingIds: string[]) {
             const trip = doc.data() as Trip;
             const initialPassengerCount = trip.passengers.length;
 
-            // Filter out the passengers whose booking has been deleted
-            const updatedPassengers = trip.passengers.filter(
-                passenger => !deletedIdsSet.has(passenger.bookingId)
-            );
+            // Filter out passengers whose booking was deleted OR whose hold has expired
+            const updatedPassengers = trip.passengers.filter(passenger => {
+                // Remove if booking was deleted
+                if (deletedIdsSet.has(passenger.bookingId)) return false;
+                
+                // Remove if it's an expired hold (and not a confirmed/paid booking which wouldn't have heldUntil)
+                if (passenger.heldUntil && passenger.heldUntil < now) return false;
+                
+                return true;
+            });
 
             // If the passenger list has changed, update the trip
             if (updatedPassengers.length < initialPassengerCount) {
@@ -62,10 +63,6 @@ export async function cleanupTrips(deletedBookingIds: string[]) {
 
     } catch (error: any) {
         console.error("An error occurred during trip cleanup:", error);
-        // We don't throw here to prevent the UI from breaking, but we log the error.
-        // The primary delete operation succeeded, this is a secondary cleanup.
         return { success: false, error: "Failed to clean up trips." };
     }
 }
-
-    

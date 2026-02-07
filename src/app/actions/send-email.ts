@@ -7,6 +7,7 @@ import BookingRescheduledEmail from '@/components/emails/booking-rescheduled-ema
 import ManualRescheduleEmail from '@/components/emails/manual-reschedule-email';
 import type { Booking } from '@/lib/types';
 
+const ADMIN_EMAIL = 'tecotransportservices@gmail.com';
 
 interface SendBookingStatusEmailProps {
   name: string;
@@ -42,7 +43,6 @@ export const sendBookingStatusEmail = async (props: SendBookingStatusEmailProps)
   }
 };
 
-
 interface SendBookingReceivedEmailProps {
   name: string;
   email: string;
@@ -75,7 +75,6 @@ export const sendBookingReceivedEmail = async (props: SendBookingReceivedEmailPr
   }
 };
 
-
 interface SendBookingRescheduledEmailProps {
     name: string;
     email: string;
@@ -101,7 +100,6 @@ export const sendBookingRescheduledEmail = async(props: SendBookingRescheduledEm
     }
 };
 
-
 interface SendRefundRequestEmailProps {
     bookingId: string;
     customerName: string;
@@ -112,12 +110,11 @@ interface SendRefundRequestEmailProps {
 
 export const sendRefundRequestEmail = async (props: SendRefundRequestEmailProps) => {
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const refundEmail = 'tecotransportservices@gmail.com';
 
   try {
     const { data, error } = await resend.emails.send({
         from: 'TecoTransit Alert <alert@tecotransit.org>',
-        to: [refundEmail], 
+        to: [ADMIN_EMAIL], 
         subject: `New Refund Request for Booking: ${props.bookingId.substring(0,8)}`,
         html: `
             <h1>Refund Request Initiated</h1>
@@ -144,13 +141,12 @@ export const sendRefundRequestEmail = async (props: SendRefundRequestEmailProps)
   }
 };
 
-
 export const sendRescheduleFailedEmail = async (booking: Booking) => {
     const resend = new Resend(process.env.RESEND_API_KEY);
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['tecotransportservices@gmail.com'],
+            to: [ADMIN_EMAIL],
             subject: `Action Required: Booking Reschedule Failed (ID: ${booking.id.substring(0,8)})`,
             html: `
                 <h1>Action Required: Automatic Reschedule Failed</h1>

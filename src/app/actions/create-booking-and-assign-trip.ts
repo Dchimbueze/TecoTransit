@@ -14,6 +14,8 @@ type CreateBookingResult = {
     error?: string;
 }
 
+const ADMIN_EMAIL = 'tecotransportservices@gmail.com';
+
 /**
  * Creates a 'Pending' booking and holds a seat on a trip for 7 minutes.
  */
@@ -36,11 +38,13 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     try {
         await newBookingRef.set(firestoreBooking);
         
-        // Pass the firestoreBooking but convert serverTimestamp for internal use
-        await assignBookingToTrip({ 
+        // Convert data for the internal assign function
+        const bookingForAssignment = { 
             ...firestoreBooking, 
             createdAt: Date.now() 
-        } as any);
+        } as any;
+
+        await assignBookingToTrip(bookingForAssignment);
 
         const createdDoc = await newBookingRef.get();
         const createdData = createdDoc.data();
@@ -58,7 +62,7 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
 };
 
 /**
- * Atomically assigns a booking to a trip, handling temporary holds.
+ * Atomically assigns a booking to a trip, handling temporary 7-minute holds.
  */
 export async function assignBookingToTrip(bookingData: Booking) {
     const admin = getFirebaseAdmin();
@@ -104,14 +108,11 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 
                 // Filter out expired holds for accurate count
                 const activePassengers = (trip.passengers || []).filter(p => {
-                    if (p.heldUntil && p.heldUntil < now) {
-                        return false; 
-                    }
+                    if (p.heldUntil && p.heldUntil < now) return false; 
                     return true;
                 });
 
                 if (activePassengers.length < capacity) {
-                    // Update trip with new passenger and cleaned list
                     const updatedPassengers = [...activePassengers, passenger];
                     const isFull = updatedPassengers.length >= capacity;
                     
@@ -126,7 +127,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 }
             }
 
-            // Create new trip if needed and if vehicle count allows
             if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 1))) {
                 const newIndex = tripsSnapshot.size + 1;
                 const newTripId = `${priceRuleId}_${intendedDate}_${newIndex}`;
@@ -162,7 +162,7 @@ async function sendOverflowEmail(bookingDetails: any, reason: string) {
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['tecotransportservices@gmail.com'],
+            to: [ADMIN_EMAIL],
             subject: 'Urgent: Vehicle Capacity Alert',
             html: `<p>Booking ${bookingDetails.id} assignment failed: ${reason}</p>`,
         });
@@ -175,8 +175,6 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
     if (!tripSnap.exists) return;
 
     const trip = tripSnap.data() as Trip;
-    
-    // A trip is "full" if the count of Paid/Confirmed passengers equals capacity
     const passengerIds = trip.passengers.map(p => p.bookingId);
     if (passengerIds.length === 0) return;
 
@@ -188,7 +186,7 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
 
     if (totalConfirmedOrPaid < trip.capacity) return;
     
-    const bookingsToConfirm = paidBookings; // Only move 'Paid' to 'Confirmed'
+    const bookingsToConfirm = paidBookings;
 
     if (bookingsToConfirm.length === 0) return;
 
