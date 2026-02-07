@@ -1,17 +1,9 @@
-
 'use server';
 
-import Paystack from 'paystack';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-
-if (!PAYSTACK_SECRET_KEY) {
-  console.warn('PAYSTACK_SECRET_KEY is not set. Paystack features will be limited.');
-}
-
-const paystack = PAYSTACK_SECRET_KEY ? Paystack(PAYSTACK_SECRET_KEY) : null;
 
 interface InitializeTransactionArgs {
   email: string;
@@ -22,11 +14,13 @@ interface InitializeTransactionArgs {
 
 /**
  * Initializes a Paystack transaction after creating a 'Pending' booking to hold the seat.
+ * Uses direct fetch for maximum reliability in Server Actions.
  */
 export const initializeTransaction = async ({ email, amount, metadata, bookingData }: InitializeTransactionArgs) => {
   try {
-    if (!paystack) {
-      throw new Error('Paystack is not configured on the server.');
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error('PAYSTACK_SECRET_KEY is not configured on the server.');
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
@@ -34,6 +28,7 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
       throw new Error('NEXT_PUBLIC_BASE_URL is not configured.');
     }
 
+    // 1. Create the pending booking first to reserve the seat
     const { createPendingBooking } = await import('./create-booking-and-assign-trip');
     const pendingResult = await createPendingBooking(bookingData);
     if (!pendingResult.success || !pendingResult.booking) {
@@ -45,18 +40,28 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
         booking_id: pendingResult.booking.id,
     };
 
-    const response = await paystack.transaction.initialize({
-      email,
-      amount: Math.round(amount),
-      metadata: updatedMetadata,
-      callback_url: `${baseUrl}/payment/callback`
+    // 2. Initialize with Paystack via direct API
+    const response = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${secretKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            email,
+            amount: Math.round(amount),
+            metadata: updatedMetadata,
+            callback_url: `${baseUrl}/payment/callback`
+        }),
     });
 
-    if (!response || !response.data) {
-        throw new Error('Paystack initialization failed - No data returned from Paystack.');
+    const result = await response.json();
+
+    if (!result.status || !result.data) {
+        throw new Error(result.message || 'Paystack initialization failed.');
     }
 
-    return { status: true, data: response.data };
+    return { status: true, data: result.data };
   } catch (error: any) {
     console.error('Paystack initialization error:', error.message);
     return { status: false, message: error.message };
@@ -65,31 +70,49 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
 
 /**
  * Verifies the transaction and updates the held booking to 'Paid'.
+ * Uses direct fetch to ensure transaction metadata is correctly parsed.
  */
 export const verifyTransactionAndCreateBooking = async (reference: string) => {
     try {
         console.log(`Starting payment verification for reference: ${reference}`);
         
-        if (!paystack) {
-            throw new Error('Paystack is not configured on the server. Please check environment variables.');
+        const secretKey = process.env.PAYSTACK_SECRET_KEY;
+        if (!secretKey) {
+            throw new Error('PAYSTACK_SECRET_KEY is not configured on the server.');
         }
 
-        const verificationResponse = await paystack.transaction.verify(reference);
+        // Direct API call for verification
+        const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+            headers: {
+                Authorization: `Bearer ${secretKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        const verificationData = await response.json();
+
+        if (!verificationData.status || verificationData.data.status !== 'success') {
+            console.error('Paystack verification failed:', verificationData);
+            throw new Error(verificationData.data?.gateway_response || verificationData.message || 'Payment verification failed.');
+        }
+
+        const data = verificationData.data;
         
-        if (!verificationResponse || !verificationResponse.data) {
-            throw new Error('No verification data received from Paystack.');
+        // Metadata can sometimes be a JSON string depending on how it was passed/stored
+        let metadata = data.metadata;
+        if (typeof metadata === 'string' && metadata.trim() !== '') {
+            try {
+                metadata = JSON.parse(metadata);
+            } catch (e) {
+                console.error('Failed to parse Paystack metadata string:', e);
+            }
         }
 
-        if (verificationResponse.data.status !== 'success') {
-            console.error('Payment not successful:', verificationResponse.data);
-            throw new Error(verificationResponse.data.gateway_response || 'Payment verification failed.');
-        }
-
-        const metadata = verificationResponse.data.metadata;
         const bookingId = metadata?.booking_id;
         
         if (!bookingId) {
-            throw new Error('Booking ID is missing from transaction metadata. This is a critical error.');
+            console.error('Metadata check failed. Full data:', data);
+            throw new Error('Booking ID is missing from transaction metadata.');
         }
 
         const admin = getFirebaseAdmin();
@@ -103,9 +126,10 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
         const bookingSnap = await bookingRef.get();
 
         if (!bookingSnap.exists) {
-            throw new Error(`Booking with ID ${bookingId} not found in database.`);
+            throw new Error(`Booking with ID ${bookingId} not found.`);
         }
 
+        // Atomic update to mark as paid
         await bookingRef.update({
             status: 'Paid',
             paymentReference: reference,
@@ -118,18 +142,17 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
                 const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
                 await checkAndConfirmTrip(db, updatedBookingData.tripId);
             } catch (confirmError) {
-                console.error('Non-critical error: Booking was paid but trip confirmation failed.', confirmError);
-                // We don't fail the whole verification if just the confirmation logic hits an edge case
+                console.error('Non-critical error: Booking paid but trip confirm failed.', confirmError);
             }
         }
 
         return { success: true, bookingId: bookingId };
 
     } catch (error: any) {
-        console.error('Verification and booking update failed critically:', error);
+        console.error('Verification failed critically:', error);
         return { 
             success: false, 
-            error: error.message || 'An internal server error occurred during payment verification.' 
+            error: error.message || 'An internal error occurred during verification.' 
         };
     }
 };
