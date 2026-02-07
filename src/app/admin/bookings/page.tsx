@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
@@ -13,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History, Briefcase, Ticket, X, Loader2, Play } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, Download, RefreshCw, Trash2, Search, Ban, History, Briefcase, X, Loader2, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -74,17 +75,6 @@ function BookingsPageSkeleton() {
         </div>
     );
 }
-
-const getStatusIcon = (status: Booking['status']) => {
-    switch (status) {
-        case 'Confirmed': return <CheckCircle className="h-3 w-3" />;
-        case 'Cancelled': return <Ban className="h-3 w-3" />;
-        case 'Paid': return <HandCoins className="h-3 w-3" />;
-        case 'Pending': return <CircleDot className="h-3 w-3" />;
-        case 'Refunded': return <CreditCard className="h-3 w-3" />;
-        default: return <Check className="h-3 w-3" />;
-    }
-};
 
 export default function AdminBookingsPage() {
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
@@ -380,8 +370,14 @@ export default function AdminBookingsPage() {
             <DialogContent className="p-0 max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border-none shadow-2xl">
                 <DialogHeader className="p-6 bg-card border-b">
                     <div className="flex items-center justify-between">
-                        <div><DialogTitle className="text-2xl font-bold">Manage Booking: {selectedBooking.id.substring(0,8)}</DialogTitle><DialogDescription>Created on {format(selectedBooking.createdAt, 'PPp')}</DialogDescription></div>
-                        <Badge variant={getStatusVariant(selectedBooking.status)} className="px-4 py-1 text-sm gap-2"><div className={cn("w-2 h-2 rounded-full", selectedBooking.status === 'Paid' ? "bg-blue-500" : selectedBooking.status === 'Confirmed' ? "bg-green-500" : selectedBooking.status === 'Pending' ? "bg-amber-500 animate-pulse" : "bg-destructive")}></div>{selectedBooking.status}</Badge>
+                        <div>
+                            <DialogTitle className="text-2xl font-bold">Manage Booking: {selectedBooking.id.substring(0,8)}</DialogTitle>
+                            <DialogDescription>Created on {format(selectedBooking.createdAt, 'PPp')}</DialogDescription>
+                        </div>
+                        <Badge variant={getStatusVariant(selectedBooking.status)} className="px-4 py-1 text-sm gap-2">
+                            <div className={cn("w-2 h-2 rounded-full", selectedBooking.status === 'Paid' ? "bg-blue-500" : selectedBooking.status === 'Confirmed' ? "bg-green-500" : selectedBooking.status === 'Pending' ? "bg-amber-500 animate-pulse" : "bg-destructive")}></div>
+                            {selectedBooking.status}
+                        </Badge>
                     </div>
                 </DialogHeader>
                 <div className="grid md:grid-cols-3 flex-1 overflow-y-auto bg-background">
@@ -447,16 +443,28 @@ export default function AdminBookingsPage() {
                      <AlertDialog>
                         <AlertDialogTrigger asChild><Button variant="ghost" className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-4 w-4" /> Delete</Button></AlertDialogTrigger>
                         <AlertDialogContent>
-                            <AlertDialogHeader><AlertDialogTitle>Delete Record?</AlertDialogTitle><AlertDialogDescription>This permanently removes the booking. Seats will be freed.</AlertDialogDescription></AlertDialogHeader>
-                            <AlertDialogFooter><AlertDialogCancel>Keep</AlertDialogCancel><AlertDialogAction onClick={handleDeleteBooking} className={cn(buttonVariants({variant:'destructive'}))}>Delete</AlertDialogAction></AlertDialogFooter>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Record?</AlertDialogTitle>
+                                <AlertDialogDescription>This permanently removes the booking. Seats will be freed.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Keep</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDeleteBooking} className={cn(buttonVariants({variant:'destructive'}))}>Delete</AlertDialogAction>
+                            </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
                     <div className="flex items-center gap-3">
                          <AlertDialog>
                             <AlertDialogTrigger asChild><Button variant="secondary" className="font-bold" disabled={selectedBooking.status === 'Cancelled' || isProcessing.cancel}><Ban className="mr-2 h-4 w-4" /> Cancel Booking</Button></AlertDialogTrigger>
                             <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Cancel this booking?</AlertDialogTitle><AlertDialogDescription>This marks the booking as cancelled and frees the seat.</AlertDialogDescription></AlertDialogHeader>
-                                <AlertDialogFooter><AlertDialogCancel>Go Back</AlertDialogCancel><AlertDialogAction onClick={handleCancelBooking}>Confirm Cancellation</AlertDialogAction></AlertDialogFooter>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
+                                    <AlertDialogDescription>This marks the booking as cancelled and frees the seat.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Go Back</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleCancelBooking}>Confirm Cancellation</AlertDialogAction>
+                                </AlertDialogFooter>
                             </AlertDialogContent>
                         </AlertDialog>
                         <Button variant="ghost" size="icon" onClick={() => setIsManageDialogOpen(false)}><X className="h-4 w-4" /></Button>
@@ -465,8 +473,14 @@ export default function AdminBookingsPage() {
             </DialogContent>
             <AlertDialog open={isRescheduleConfirmOpen} onOpenChange={setIsRescheduleConfirmOpen}>
                 <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>Reschedule Passenger?</AlertDialogTitle><AlertDialogDescription>Moving to {newRescheduleDate ? format(newRescheduleDate, 'PPP') : ''}. The customer will be notified.</AlertDialogDescription></AlertDialogHeader>
-                    <AlertDialogFooter><AlertDialogCancel>Abort</AlertDialogCancel><AlertDialogAction onClick={handleManualReschedule}>Confirm Change</AlertDialogAction></AlertDialogFooter>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Reschedule Passenger?</AlertDialogTitle>
+                        <AlertDialogDescription>Moving to {newRescheduleDate ? format(newRescheduleDate, 'PPP') : ''}. The customer will be notified.</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Abort</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleManualReschedule}>Confirm Change</AlertDialogAction>
+                    </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
         </Dialog>

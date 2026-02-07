@@ -15,7 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { KeyRound, Eye, EyeOff, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
-import Link from 'link';
+import Link from 'next/link';
 
 const formSchema = z.object({
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
