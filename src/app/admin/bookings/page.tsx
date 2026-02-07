@@ -24,8 +24,6 @@ import { getAllBookings } from "@/lib/data";
 import { getStatusVariant } from "@/lib/utils";
 import { deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking, cancelBooking } from "@/app/actions/booking-actions";
 import { synchronizeAndCreateTrips } from "@/app/actions/synchronize-bookings";
-import { rescheduleUnderfilledTrips } from "@/app/actions/reschedule-bookings";
-import { syncPaymentStatus } from "@/app/actions/paystack";
 
 type BulkDeleteMode = 'all' | '7d' | '30d' | 'custom';
 
@@ -107,8 +105,6 @@ export default function AdminBookingsPage() {
 
   const [newRescheduleDate, setNewRescheduleDate] = useState<Date | undefined>();
   const [isRescheduleConfirmOpen, setIsRescheduleConfirmOpen] = useState(false);
-  
-  const [syncRef, setSyncRef] = useState("");
 
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -129,7 +125,6 @@ export default function AdminBookingsPage() {
     const booking = allBookings.find(b => b.id === bookingId);
     if (booking) {
         setSelectedBooking(booking);
-        setSyncRef(booking.paymentReference || "");
         setIsManageDialogOpen(true);
     }
   }
@@ -189,25 +184,6 @@ export default function AdminBookingsPage() {
     } finally {
         setIsProcessing(prev => ({...prev, bulkDelete: false}));
         setIsCustomDeleteOpen(false);
-    }
-  };
-
-  const handleSyncPayment = async () => {
-    if (!selectedBooking) return;
-    setIsProcessing(prev => ({...prev, sync: true}));
-    try {
-        const result = await syncPaymentStatus(selectedBooking.id, syncRef || undefined);
-        if (result.success) {
-            toast({ title: "Payment Synced", description: "The booking has been updated to Paid." });
-            setIsManageDialogOpen(false);
-            fetchBookings();
-        } else {
-            throw new Error(result.error || "Could not find a successful transaction with this reference.");
-        }
-    } catch (e: any) {
-        toast({ variant: "destructive", title: "Sync Failed", description: e.message });
-    } finally {
-        setIsProcessing(prev => ({...prev, sync: false}));
     }
   };
 
@@ -358,15 +334,8 @@ export default function AdminBookingsPage() {
                     </div>
                     <div className="md:col-span-1 bg-muted/40 p-8 space-y-10 border-l">
                         <div className="space-y-4">
-                            <h3 className="text-lg font-bold">Payment Status</h3>
+                            <h3 className="text-lg font-bold">Payment Summary</h3>
                             <div className="space-y-1"><p className="text-xs text-muted-foreground font-semibold uppercase">Total Fare</p><p className="text-5xl font-black text-primary">₦{selectedBooking.totalFare.toLocaleString()}</p></div>
-                            <div className="pt-4 space-y-3">
-                                <Input placeholder="Paystack Reference" value={syncRef} onChange={e => setSyncRef(e.target.value)} className="bg-background" />
-                                <Button className="w-full font-bold" variant="outline" onClick={handleSyncPayment} disabled={isProcessing.sync}>
-                                    {isProcessing.sync ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                                    Pay Sync
-                                </Button>
-                            </div>
                         </div>
                         <div className="space-y-4 pt-6 border-t">
                             <h3 className="text-lg font-bold">Manual Reschedule</h3>
