@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -18,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send } from 'lucide-react';
+import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from './ui/checkbox';
 import BookingConfirmationDialog from './booking-confirmation-dialog';
@@ -28,7 +27,7 @@ import { useSettings } from '@/context/settings-context';
 import { createPendingBooking } from '@/app/actions/create-booking-and-assign-trip';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { PriceRule } from '@/lib/types';
+import type { PriceRule, SeatAvailability } from '@/lib/types';
 
 
 const bookingSchema = z.object({
@@ -69,6 +68,8 @@ export default function BookingForm() {
   const [isIntendedDatePopoverOpen, setIsIntendedDatePopoverOpen] = useState(false);
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
   
+  const [seatAvailability, setSeatAvailability] = useState<SeatAvailability | null>(null);
+  const [fetchingSeats, setFetchingSeats] = useState(false);
 
   const form = useForm<z.infer<typeof bookingSchema>>({
     resolver: zodResolver(bookingSchema),
@@ -82,7 +83,6 @@ export default function BookingForm() {
     },
   });
 
-  // Fetch prices from Firestore
   useEffect(() => {
     const q = query(collection(db, "prices"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -110,10 +110,10 @@ export default function BookingForm() {
   const destination = watch("destination");
   const vehicleType = watch("vehicleType");
   const luggageCount = watch("luggageCount");
+  const intendedDate = watch("intendedDate");
 
   const availableVehicles = useMemo(() => {
     if (pickup && destination && prices) {
-      // Filter for price rules that match the route AND have at least one vehicle assigned.
       const priceRule = prices.filter(
         (p) => p.pickup === pickup && p.destination === destination && p.vehicleCount > 0
       );
@@ -130,6 +130,32 @@ export default function BookingForm() {
         setValue('vehicleType', '', { shouldValidate: true });
     }
   }, [pickup, destination, vehicleType, setValue, availableVehicles]);
+
+  useEffect(() => {
+    async function fetchSeats() {
+        if (pickup && destination && vehicleType && intendedDate) {
+            setFetchingSeats(true);
+            try {
+                const dateStr = format(intendedDate, 'yyyy-MM-dd');
+                const response = await fetch(`/api/seats?pickup=${pickup}&destination=${destination}&vehicleType=${vehicleType}&date=${dateStr}`);
+                const data = await response.json();
+                if (response.ok) {
+                    setSeatAvailability(data);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                console.error("Failed to fetch seat availability:", error);
+                setSeatAvailability(null);
+            } finally {
+                setFetchingSeats(false);
+            }
+        } else {
+            setSeatAvailability(null);
+        }
+    }
+    fetchSeats();
+  }, [pickup, destination, vehicleType, intendedDate]);
 
   const { totalFare, baseFare } = useMemo(() => {
     const vehicleRule = availableVehicles.find(v => v.vehicleType === vehicleType);
@@ -148,6 +174,15 @@ export default function BookingForm() {
       });
       return;
     }
+
+    if (seatAvailability && seatAvailability.availableSeats <= 0) {
+        toast({
+            variant: 'destructive',
+            title: 'Trip Full',
+            description: 'This trip is currently full. Please try another date or vehicle.',
+        });
+        return;
+    }
     
     setIsProcessing(true);
 
@@ -155,7 +190,6 @@ export default function BookingForm() {
         const priceRuleId = `${formData.pickup}_${formData.destination}_${formData.vehicleType}`.toLowerCase().replace(/\s+/g, '-');
         
         if (isPaystackEnabled) {
-            // Live Mode: Proceed to Paystack
             const bookingDataWithFare = { ...formData, totalFare };
             const cleanBookingData = {
               name: bookingDataWithFare.name,
@@ -172,7 +206,7 @@ export default function BookingForm() {
 
             const result = await initializeTransaction({
                 email: cleanBookingData.email,
-                amount: cleanBookingData.totalFare * 100, // Amount in kobo
+                amount: cleanBookingData.totalFare * 100, 
                 metadata: {
                     priceRuleId,
                     booking_details: JSON.stringify(cleanBookingData),
@@ -189,7 +223,6 @@ export default function BookingForm() {
                 throw new Error(result.message || 'Failed to initialize transaction.');
             }
         } else {
-            // Test Mode: Bypass Paystack and create a pending booking
             await createPendingBooking({ ...formData, totalFare });
             setIsConfirmationOpen(true);
             form.reset();
@@ -340,7 +373,7 @@ export default function BookingForm() {
                                 disabled={(date) => {
                                     const today = new Date();
                                     today.setHours(0, 0, 0, 0);
-                                    if (date <= today) return true; // Disable today and all past dates
+                                    if (date <= today) return true; 
                                     if (bookingDateRange?.from && date < bookingDateRange.from) return true;
                                     if (bookingDateRange?.to && date > bookingDateRange.to) return true;
                                     return false;
@@ -394,6 +427,32 @@ export default function BookingForm() {
                     </FormItem>
                 )} />
             </div>
+
+            {fetchingSeats ? (
+                <div className="flex items-center gap-2 p-4 bg-muted/30 rounded-lg text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span>Checking seat availability...</span>
+                </div>
+            ) : seatAvailability && (
+                <div className={cn(
+                    "flex items-center gap-3 p-4 rounded-lg border text-sm transition-colors",
+                    seatAvailability.availableSeats > 0 ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"
+                )}>
+                    <Users className="h-5 w-5 shrink-0" />
+                    <div>
+                        <p className="font-semibold">
+                            {seatAvailability.availableSeats > 0 
+                                ? `${seatAvailability.availableSeats} seats available for this trip.` 
+                                : "This trip is currently full."
+                            }
+                        </p>
+                        <p className="text-xs opacity-80">
+                            Vehicle Capacity: {seatAvailability.totalCapacity} seats
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <div className="space-y-4">
               <FormField
                 control={form.control}
@@ -446,7 +505,7 @@ export default function BookingForm() {
                 <p className="text-sm text-muted-foreground">Total Fare (transaction fees included)</p>
                 <p className="text-2xl font-bold text-primary">₦{totalFare.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             </div>
-            <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={isProcessing || settingsLoading || totalFare <= 0}>
+            <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={isProcessing || settingsLoading || totalFare <= 0 || (seatAvailability !== null && seatAvailability.availableSeats <= 0)}>
               {renderSubmitButtonContent()}
             </Button>
           </CardFooter>
@@ -463,5 +522,3 @@ export default function BookingForm() {
     </>
   );
 }
-
-    

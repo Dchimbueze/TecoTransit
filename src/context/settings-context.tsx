@@ -1,65 +1,55 @@
 
 "use client";
 
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { DateRange } from 'react-day-picker';
+
+interface DateRange {
+  from: Date | undefined;
+  to?: Date | undefined;
+}
 
 interface SettingsContextType {
   isPaystackEnabled: boolean;
-  bookingDateRange?: DateRange;
+  bookingDateRange: DateRange | undefined;
   loading: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
-  const [isPaystackEnabled, setIsPaystackEnabled] = useState(true);
-  const [bookingDateRange, setBookingDateRange] = useState<DateRange | undefined>();
-  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<SettingsContextType>({
+    isPaystackEnabled: true,
+    bookingDateRange: undefined,
+    loading: true,
+  });
 
   useEffect(() => {
-    const paymentSettingsDocRef = doc(db, "settings", "payment");
-    const bookingSettingsDocRef = doc(db, "settings", "booking");
-
-    const unsubPayment = onSnapshot(paymentSettingsDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setIsPaystackEnabled(docSnap.data().isPaystackEnabled);
+    const unsub = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setSettings({
+          isPaystackEnabled: data.isPaystackEnabled ?? true,
+          bookingDateRange: data.bookingDateRange ? {
+            from: new Date(data.bookingDateRange.from),
+            to: new Date(data.bookingDateRange.to),
+          } : undefined,
+          loading: false,
+        });
+      } else {
+        setSettings(prev => ({ ...prev, loading: false }));
       }
-      setLoading(false); // Consider loading complete when primary setting is loaded
     }, (error) => {
-      console.error("Failed to subscribe to payment settings:", error);
-      setLoading(false);
-    });
-    
-    const unsubBooking = onSnapshot(bookingSettingsDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            const range: DateRange = {};
-            if (data.startDate) range.from = data.startDate.toDate();
-            if (data.endDate) range.to = data.endDate.toDate();
-            setBookingDateRange(range);
-        }
-    }, (error) => {
-        console.error("Failed to subscribe to booking settings:", error);
+      console.error("Error fetching settings:", error);
+      setSettings(prev => ({ ...prev, loading: false }));
     });
 
-
-    return () => {
-        unsubPayment();
-        unsubBooking();
-    };
+    return () => unsub();
   }, []);
 
-  const value = {
-    isPaystackEnabled,
-    bookingDateRange,
-    loading,
-  };
-
   return (
-    <SettingsContext.Provider value={value}>
+    <SettingsContext.Provider value={settings}>
       {children}
     </SettingsContext.Provider>
   );

@@ -25,7 +25,6 @@ const playfairDisplay = Playfair_Display({
   variable: '--font-playfair-display',
 });
 
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -43,6 +42,7 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       </head>
       <body
+        suppressHydrationWarning
         className={`${ptSans.variable} ${playfairDisplay.variable} font-body antialiased flex flex-col h-full bg-background`}
       >
         <ThemeProvider
