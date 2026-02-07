@@ -1,13 +1,110 @@
 
 'use server';
 
-import { query, collection, where, Timestamp, writeBatch } from 'firebase/firestore';
-import { sendManualRescheduleEmail } from './send-email';
+import { doc, updateDoc, deleteDoc, getDoc, getDocs, query, collection, where, Timestamp, writeBatch } from 'firebase/firestore';
+import { sendBookingStatusEmail, sendManualRescheduleEmail, sendRefundRequestEmail } from './send-email';
 import { cleanupTrips } from './cleanup-trips';
 import type { Booking } from '@/lib/types';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { assignBookingToTrip } from './create-booking-and-assign-trip';
+import Paystack from 'paystack';
+
+if (!process.env.PAYSTACK_SECRET_KEY) {
+  throw new Error('PAYSTACK_SECRET_KEY is not set in environment variables.');
+}
+
+const paystack = Paystack(process.env.PAYSTACK_SECRET_KEY);
+
+
+export async function updateBookingStatus(bookingId: string, status: Booking['status']): Promise<void> {
+  const adminDb = getFirebaseAdmin()?.firestore();
+  if (!adminDb) {
+    throw new Error("Database connection failed.");
+  }
+  
+  const bookingDocRef = adminDb.collection('bookings').doc(bookingId);
+  const bookingSnap = await bookingDocRef.get();
+
+  if (!bookingSnap.exists) {
+    throw new Error("Booking not found");
+  }
+  
+  const bookingToUpdate = bookingSnap.data() as Booking;
+  const oldStatus = bookingToUpdate.status;
+
+  await bookingDocRef.update({ 
+      status,
+      updatedAt: FieldValue.serverTimestamp()
+  });
+
+  // If cancelling or refunding, we must free the seat
+  if (status === 'Cancelled' || status === 'Refunded') {
+    if (bookingToUpdate.tripId) {
+      await cleanupTrips([bookingId]);
+    }
+  }
+
+  // If manually confirming or paying, trigger the check for full trip
+  if ((status === 'Confirmed' || status === 'Paid') && bookingToUpdate.tripId) {
+      const { checkAndConfirmTrip } = await import('./create-booking-and-assign-trip');
+      await checkAndConfirmTrip(adminDb, bookingToUpdate.tripId);
+  }
+
+  // Send notification for major status changes
+  if (status === 'Confirmed' || status === 'Cancelled' || status === 'Refunded') {
+    try {
+        await sendBookingStatusEmail({
+            name: bookingToUpdate.name,
+            email: bookingToUpdate.email,
+            status: status as any,
+            bookingId: bookingId,
+            pickup: bookingToUpdate.pickup,
+            destination: bookingToUpdate.destination,
+            vehicleType: bookingToUpdate.vehicleType,
+            totalFare: bookingToUpdate.totalFare,
+        });
+      } catch (emailError) {
+        console.error("Failed to send status update email:", emailError);
+      }
+  }
+}
+
+export async function requestRefund(bookingId: string): Promise<{success: boolean, message: string}> {
+    const adminDb = getFirebaseAdmin()?.firestore();
+    if (!adminDb) {
+      return { success: false, message: "Database connection failed." };
+    }
+    
+    const bookingDocRef = adminDb.collection('bookings').doc(bookingId);
+    const bookingSnap = await bookingDocRef.get();
+
+    if (!bookingSnap.exists) {
+        return { success: false, message: "Booking not found" };
+    }
+
+    const booking = bookingSnap.data() as Booking;
+    if (booking.status !== 'Cancelled') {
+        return { success: false, message: "Refunds can only be requested for cancelled bookings." };
+    }
+    if (!booking.paymentReference) {
+        return { success: false, message: "This booking has no payment reference, so a refund cannot be processed automatically." };
+    }
+
+    try {
+        await sendRefundRequestEmail({
+            customerName: booking.name,
+            customerEmail: booking.email,
+            bookingId: bookingId,
+            totalFare: booking.totalFare,
+            paymentReference: booking.paymentReference,
+        });
+        return { success: true, message: "Refund request email sent to admin." };
+    } catch(error: any) {
+        console.error("Failed to send refund request email:", error);
+        return { success: false, message: "Failed to send refund request email to admin." };
+    }
+}
 
 export async function deleteBooking(id: string): Promise<void> {
   const db = getFirebaseAdmin()?.firestore();
@@ -19,8 +116,7 @@ export async function deleteBooking(id: string): Promise<void> {
   
   if (bookingSnap.exists) {
       const bookingData = bookingSnap.data();
-      // Use Firestore Admin to delete doc
-      await bookingDocRef.delete();
+      await deleteDoc(bookingDocRef);
       
       if (bookingData && bookingData.tripId) {
           await cleanupTrips([id]);
@@ -28,15 +124,14 @@ export async function deleteBooking(id: string): Promise<void> {
   }
 }
 
+
 export async function deleteBookingsInRange(startDate: Date | null, endDate: Date | null): Promise<number> {
     const db = getFirebaseAdmin()?.firestore();
     if (!db) {
       throw new Error("Database not available");
     }
     
-    // We use a basic collection reference for deletion logic
-    const bookingsRef = db.collection('bookings');
-    let snapshot;
+    let bookingsQuery = query(collection(db, 'bookings'));
 
     if (startDate && endDate) {
         const startTimestamp = Timestamp.fromDate(startDate);
@@ -44,22 +139,21 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
         endOfDay.setHours(23, 59, 59, 999);
         const endTimestamp = Timestamp.fromDate(endOfDay);
         
-        const q = bookingsRef
-          .where('createdAt', '>=', startTimestamp)
-          .where('createdAt', '<=', endTimestamp);
-        
-        snapshot = await q.get();
-    } else {
-        snapshot = await bookingsRef.get();
+        bookingsQuery = query(
+          collection(db, 'bookings'),
+          where('createdAt', '>=', startTimestamp),
+          where('createdAt', '<=', endTimestamp)
+        );
     }
     
+    const snapshot = await getDocs(bookingsQuery);
     if (snapshot.empty) {
         return 0;
     }
     
     const deletedBookingIds: string[] = [];
     const batches = [];
-    let currentBatch = db.batch();
+    let currentBatch = writeBatch(db);
     let currentBatchSize = 0;
 
     for (const doc of snapshot.docs) {
@@ -71,7 +165,7 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
 
         if (currentBatchSize === 500) {
             batches.push(currentBatch);
-            currentBatch = db.batch();
+            currentBatch = writeBatch(db);
             currentBatchSize = 0;
         }
     }
@@ -92,6 +186,7 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
     
     return snapshot.size;
 }
+
 
 export async function manuallyRescheduleBooking(bookingId: string, newDate: string): Promise<{success: boolean; error?: string}> {
     const adminDb = getFirebaseAdmin()?.firestore();
