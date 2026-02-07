@@ -15,7 +15,7 @@ interface InitializeTransactionArgs {
   email: string;
   amount: number;
   metadata: Record<string, any>;
-  bookingData: any; // Data for initial 'Pending' booking
+  bookingData: any; 
 }
 
 /**
@@ -28,19 +28,16 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
       throw new Error('NEXT_PUBLIC_BASE_URL is not configured.');
     }
 
-    // 1. Create the Pending booking first to "hold" the seat
     const pendingResult = await createPendingBooking(bookingData);
     if (!pendingResult.success || !pendingResult.booking) {
         throw new Error(pendingResult.error || 'Failed to hold seat for booking.');
     }
 
-    // 2. Add the actual booking ID to the metadata
     const updatedMetadata = {
         ...metadata,
         booking_id: pendingResult.booking.id,
     };
 
-    // 3. Initialize Paystack
     const response = await paystack.transaction.initialize({
       email,
       amount: Math.round(amount),
@@ -79,7 +76,6 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
         const admin = getFirebaseAdmin();
         const db = admin.firestore();
         
-        // Update the existing 'Pending' booking to 'Paid'
         const bookingRef = db.collection('bookings').doc(bookingId);
         await bookingRef.update({
             status: 'Paid',
@@ -87,7 +83,6 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
             updatedAt: FieldValue.serverTimestamp(),
         });
 
-        // Trigger the assignment check (which will confirm the trip if it's now full of paid users)
         const bookingSnap = await bookingRef.get();
         const bookingData = bookingSnap.data();
         if (bookingData && bookingData.tripId) {

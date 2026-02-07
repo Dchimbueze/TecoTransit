@@ -48,9 +48,7 @@ export async function getSeatAvailability(
 
         tripsSnapshot.forEach(doc => {
             const trip = doc.data() as Trip;
-            // Only count active passengers (not expired holds)
             const activePassengers = (trip.passengers || []).filter(p => {
-                // If it's a confirmed/paid booking, it won't have heldUntil
                 if (p.heldUntil && p.heldUntil < now) {
                     return false;
                 }

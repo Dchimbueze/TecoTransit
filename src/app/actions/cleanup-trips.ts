@@ -33,18 +33,12 @@ export async function cleanupTrips(deletedBookingIds: string[] = []) {
             const trip = doc.data() as Trip;
             const initialPassengerCount = trip.passengers.length;
 
-            // Filter out passengers whose booking was deleted OR whose hold has expired
             const updatedPassengers = trip.passengers.filter(passenger => {
-                // Remove if booking was deleted
                 if (deletedIdsSet.has(passenger.bookingId)) return false;
-                
-                // Remove if it's an expired hold (and not a confirmed/paid booking which wouldn't have heldUntil)
                 if (passenger.heldUntil && passenger.heldUntil < now) return false;
-                
                 return true;
             });
 
-            // If the passenger list has changed, update the trip
             if (updatedPassengers.length < initialPassengerCount) {
                 updatedTripsCount++;
                 const isFull = updatedPassengers.length >= trip.capacity;

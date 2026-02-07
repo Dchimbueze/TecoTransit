@@ -38,9 +38,6 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     try {
         await newBookingRef.set(firestoreBooking);
         
-        // Convert data for the internal assign function
-        // Note: FieldValue.serverTimestamp() won't be resolved until after the set, 
-        // so we pass a numeric timestamp for the immediate assignment logic.
         const bookingForAssignment = { 
             ...firestoreBooking, 
             createdAt: Date.now() 
@@ -97,7 +94,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
             const tripsSnapshot = await transaction.get(tripsQuery);
             let assigned = false;
             
-            // Define passenger with a hold if status is Pending
             const passenger: Passenger = { 
                 bookingId, 
                 name, 
@@ -108,7 +104,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
             for (const doc of tripsSnapshot.docs) {
                 const trip = doc.data() as Trip;
                 
-                // Filter out expired holds for accurate count
                 const activePassengers = (trip.passengers || []).filter(p => {
                     if (p.heldUntil && p.heldUntil < now) return false; 
                     return true;

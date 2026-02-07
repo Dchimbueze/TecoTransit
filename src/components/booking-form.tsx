@@ -223,7 +223,6 @@ export default function BookingForm() {
                 throw new Error(result.message || 'Failed to initialize transaction.');
             }
         } else {
-            // Bypass mode: Create hold and keep it pending
             await createPendingBooking(bookingDataWithFare);
             setIsConfirmationOpen(true);
             form.reset();
