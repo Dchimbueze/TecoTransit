@@ -10,22 +10,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Briefcase, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, AlertCircle, Loader2, Ticket, History, Search, HandCoins, Ban, CircleDot, Check, CreditCard, EllipsisVertical, Sparkles } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Label } from "@/components/ui/label";
 import { getAllBookings } from "@/lib/data";
 import { getStatusVariant } from "@/lib/utils";
-import { updateBookingStatus, deleteBooking, deleteBookingsInRange, requestRefund, manuallyRescheduleBooking } from "@/app/actions/booking-actions";
+import { deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking } from "@/app/actions/booking-actions";
 import { synchronizeAndCreateTrips } from "@/app/actions/synchronize-bookings";
 import { rescheduleUnderfilledTrips } from "@/app/actions/reschedule-bookings";
 
@@ -149,55 +148,6 @@ export default function AdminBookingsPage() {
         setIsManageDialogOpen(true);
     }
   }
-
-  const handleUpdateBooking = async (status: Booking['status']) => {
-    if (!selectedBooking) return;
-
-    setIsProcessing(prev => ({...prev, [selectedBooking.id]: true}));
-    
-    try {
-        await updateBookingStatus(selectedBooking.id, status);
-        toast({
-            title: "Booking Updated",
-            description: `Booking status changed to ${status}.`,
-        });
-        fetchBookings();
-        setIsManageDialogOpen(false);
-    } catch (error) {
-        toast({
-            variant: "destructive",
-            title: "Update Failed",
-            description: `Could not update the booking. Please try again.`,
-        });
-    } finally {
-        setIsProcessing(prev => ({...prev, [selectedBooking.id]: false}));
-    }
-  };
-  
-  const handleRequestRefund = async () => {
-    if (!selectedBooking) return;
-
-    setIsProcessing(prev => ({ ...prev, refund: true }));
-    try {
-        const result = await requestRefund(selectedBooking.id);
-        if (result.success) {
-            toast({
-                title: "Refund Request Sent",
-                description: "An email has been sent to the admin to process the refund.",
-            });
-        } else {
-            throw new Error(result.message);
-        }
-    } catch (error) {
-        toast({
-            variant: "destructive",
-            title: "Refund Request Failed",
-            description: error instanceof Error ? error.message : 'An unknown error occurred.',
-        });
-    } finally {
-        setIsProcessing(prev => ({ ...prev, refund: false }));
-    }
-  };
 
   const handleDeleteBooking = async () => {
     if (!selectedBooking) return;
@@ -539,16 +489,6 @@ export default function AdminBookingsPage() {
                                     <div className="flex items-center gap-2"><VehicleIcon className="h-4 w-4" /> {selectedBooking.vehicleType}</div>
                                     <div className="flex items-center gap-2"><CalendarIcon className="h-4 w-4" /> {format(parseISO(selectedBooking.intendedDate), 'PPP')}</div>
                                 </div>
-                            </div>
-                        </div>
-                        <Separator />
-                        <div className="space-y-4">
-                            <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">Quick Status Update</h3>
-                            <div className="flex flex-wrap gap-2">
-                                <Button size="sm" variant="outline" onClick={() => handleUpdateBooking('Paid')} disabled={selectedBooking.status === 'Paid'}>Mark as Paid</Button>
-                                <Button size="sm" variant="outline" onClick={() => handleUpdateBooking('Confirmed')} disabled={selectedBooking.status === 'Confirmed'}>Confirm Manually</Button>
-                                <Button size="sm" variant="outline" onClick={() => handleUpdateBooking('Refunded')} disabled={selectedBooking.status === 'Refunded'}>Mark as Refunded</Button>
-                                <Button size="sm" variant="destructive" onClick={() => handleUpdateBooking('Cancelled')} disabled={selectedBooking.status === 'Cancelled'}>Cancel Booking</Button>
                             </div>
                         </div>
                     </div>
