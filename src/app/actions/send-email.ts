@@ -32,14 +32,12 @@ export const sendBookingStatusEmail = async (props: SendBookingStatusEmailProps)
     });
 
     if (error) {
-      // Re-throw the specific error from Resend
       throw new Error(error.message);
     }
 
     return data;
   } catch (error) {
     console.error('Failed to send status email:', error);
-    // Propagate the specific error message
     throw new Error(error instanceof Error ? error.message : 'Failed to send status email.');
   }
 };
@@ -114,12 +112,12 @@ interface SendRefundRequestEmailProps {
 
 export const sendRefundRequestEmail = async (props: SendRefundRequestEmailProps) => {
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const refundEmail = 'chimdaveo@gmail.com';
+  const refundEmail = 'tecotransportservices@gmail.com';
 
   try {
     const { data, error } = await resend.emails.send({
         from: 'TecoTransit Alert <alert@tecotransit.org>',
-        to: [refundEmail], // Send to dedicated refund address
+        to: [refundEmail], 
         subject: `New Refund Request for Booking: ${props.bookingId.substring(0,8)}`,
         html: `
             <h1>Refund Request Initiated</h1>
@@ -152,7 +150,7 @@ export const sendRescheduleFailedEmail = async (booking: Booking) => {
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['chimdaveo@gmail.com'],
+            to: ['tecotransportservices@gmail.com'],
             subject: `Action Required: Booking Reschedule Failed (ID: ${booking.id.substring(0,8)})`,
             html: `
                 <h1>Action Required: Automatic Reschedule Failed</h1>

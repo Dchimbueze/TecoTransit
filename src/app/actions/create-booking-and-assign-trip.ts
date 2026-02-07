@@ -1,4 +1,3 @@
-
 'use server';
 
 import type { Booking, BookingFormData, Passenger, PriceRule, Trip } from '@/lib/types';
@@ -16,7 +15,7 @@ type CreateBookingResult = {
 }
 
 /**
- * Creates a 'Pending' booking and holds a seat on a trip for 15 minutes.
+ * Creates a 'Pending' booking and holds a seat on a trip for 7 minutes.
  */
 export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyPolicy'> & { totalFare: number }): Promise<CreateBookingResult> => {
     const admin = getFirebaseAdmin();
@@ -69,7 +68,7 @@ export async function assignBookingToTrip(bookingData: Booking) {
     const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate, status } = bookingData;
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
     
-    const HOLD_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+    const HOLD_DURATION_MS = 7 * 60 * 1000; // 7 minutes window
     const now = Date.now();
 
     try {
@@ -106,7 +105,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 // Filter out expired holds for accurate count
                 const activePassengers = (trip.passengers || []).filter(p => {
                     if (p.heldUntil && p.heldUntil < now) {
-                        // We check the actual booking status to be safe
                         return false; 
                     }
                     return true;
@@ -164,7 +162,7 @@ async function sendOverflowEmail(bookingDetails: any, reason: string) {
     try {
         await resend.emails.send({
             from: 'TecoTransit Alert <alert@tecotransit.org>',
-            to: ['chimdaveo@gmail.com'],
+            to: ['tecotransportservices@gmail.com'],
             subject: 'Urgent: Vehicle Capacity Alert',
             html: `<p>Booking ${bookingDetails.id} assignment failed: ${reason}</p>`,
         });
@@ -179,7 +177,6 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
     const trip = tripSnap.data() as Trip;
     
     // A trip is "full" if the count of Paid/Confirmed passengers equals capacity
-    // Holds are not enough to confirm a trip
     const passengerIds = trip.passengers.map(p => p.bookingId);
     if (passengerIds.length === 0) return;
 

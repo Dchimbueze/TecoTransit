@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -17,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users } from 'lucide-react';
+import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users, Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from './ui/checkbox';
 import BookingConfirmationDialog from './booking-confirmation-dialog';
@@ -28,6 +27,7 @@ import { createPendingBooking } from '@/app/actions/create-booking-and-assign-tr
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { PriceRule, SeatAvailability } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 const bookingSchema = z.object({
@@ -294,13 +294,23 @@ export default function BookingForm() {
                             </Button>
                         ))}
                     </div>
-                </DialogContent>
+                 </DialogContent>
             </Dialog>
         </div>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={formHandleSubmit(onBookingSubmit)}>
           <CardContent className="space-y-8 pt-6">
+            {isPaystackEnabled && (
+                <Alert variant="default" className="bg-primary/10 border-primary/20">
+                    <Timer className="h-4 w-4 text-primary" />
+                    <AlertTitle className="text-primary font-bold">Important Notice</AlertTitle>
+                    <AlertDescription>
+                        Once you proceed to payment, your seat will be temporarily held for <span className="font-bold underline">7 minutes</span>. Please complete your transaction within this window to secure your spot.
+                    </AlertDescription>
+                </Alert>
+            )}
+
             <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
                 <FormField control={form.control} name="name" render={({ field }) => (
                     <FormItem>

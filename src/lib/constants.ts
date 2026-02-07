@@ -1,4 +1,3 @@
-
 import { Car, Bus } from 'lucide-react';
 
 export const locations = [
@@ -19,7 +18,7 @@ export const vehicleOptions = {
 
 export const customerService = {
   phone: '2348104050628',
-  email: 'chimdaveo@gmail.com',
+  email: 'tecotransportservices@gmail.com',
 };
 
 export const bankAccountDetails = {
