@@ -3,13 +3,14 @@
 import Paystack from 'paystack';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { assignBookingToTrip, createPendingBooking } from './create-booking-and-assign-trip';
 
-if (!process.env.PAYSTACK_SECRET_KEY) {
-  throw new Error('PAYSTACK_SECRET_KEY is not set in environment variables.');
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+
+if (!PAYSTACK_SECRET_KEY) {
+  console.warn('PAYSTACK_SECRET_KEY is not set. Paystack features will be limited.');
 }
 
-const paystack = Paystack(process.env.PAYSTACK_SECRET_KEY);
+const paystack = PAYSTACK_SECRET_KEY ? Paystack(PAYSTACK_SECRET_KEY) : null;
 
 interface InitializeTransactionArgs {
   email: string;
@@ -23,11 +24,16 @@ interface InitializeTransactionArgs {
  */
 export const initializeTransaction = async ({ email, amount, metadata, bookingData }: InitializeTransactionArgs) => {
   try {
+    if (!paystack) {
+      throw new Error('Paystack is not configured on the server.');
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
     if (!baseUrl) {
       throw new Error('NEXT_PUBLIC_BASE_URL is not configured.');
     }
 
+    const { createPendingBooking } = await import('./create-booking-and-assign-trip');
     const pendingResult = await createPendingBooking(bookingData);
     if (!pendingResult.success || !pendingResult.booking) {
         throw new Error(pendingResult.error || 'Failed to hold seat for booking.');
@@ -61,9 +67,13 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
  */
 export const verifyTransactionAndCreateBooking = async (reference: string) => {
     try {
+        if (!paystack) {
+            throw new Error('Paystack is not configured on the server.');
+        }
+
         const verificationResponse = await paystack.transaction.verify(reference);
-        if (verificationResponse.data?.status !== 'success') {
-            throw new Error('Payment was not successful.');
+        if (!verificationResponse || !verificationResponse.data || verificationResponse.data.status !== 'success') {
+            throw new Error(verificationResponse?.message || 'Payment verification failed.');
         }
 
         const metadata = verificationResponse.data.metadata;
@@ -74,7 +84,11 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
         }
 
         const admin = getFirebaseAdmin();
-        const db = admin.firestore();
+        const db = admin?.firestore();
+        
+        if (!db) {
+            throw new Error('Database connection failed during verification.');
+        }
         
         const bookingRef = db.collection('bookings').doc(bookingId);
         await bookingRef.update({
@@ -94,6 +108,6 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
 
     } catch (error: any) {
         console.error('Verification and booking update failed:', error);
-        return { success: false, error: error.message };
+        return { success: false, error: error.message || 'An internal server error occurred during payment verification.' };
     }
 };
