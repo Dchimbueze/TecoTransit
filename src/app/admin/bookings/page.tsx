@@ -8,13 +8,13 @@ import { DateRange } from "react-day-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History, Briefcase, Ticket, X } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, Search, HandCoins, Ban, CircleDot, Check, CreditCard, Sparkles, History, Briefcase, Ticket, X, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -395,7 +395,10 @@ export default function AdminBookingsPage() {
                         </DropdownMenuContent>
                     </DropdownMenu>
                      <AlertDialogContent>
-                        <AlertDialogHeader><AlertDialogTitle>Delete Custom Range</AlertDialogTitle></AlertDialogHeader>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Custom Range</AlertDialogTitle>
+                          <AlertDialogDescription>Select a date range to permanently delete all booking records within that period.</AlertDialogDescription>
+                        </AlertDialogHeader>
                         <div className="py-4">
                             <Calendar mode="range" selected={deleteDateRange} onSelect={setDeleteDateRange} numberOfMonths={2} />
                         </div>
@@ -488,7 +491,9 @@ export default function AdminBookingsPage() {
                     <div className="flex items-center justify-between">
                         <div>
                             <DialogTitle className="text-2xl font-bold">Manage Booking: {selectedBooking.id}</DialogTitle>
-                            <p className="text-sm text-muted-foreground mt-1">Created on {format(selectedBooking.createdAt, 'MMMM do, yyyy h:mm a')}</p>
+                            <DialogDescription className="text-sm text-muted-foreground mt-1">
+                              Created on {format(selectedBooking.createdAt, 'MMMM do, yyyy h:mm a')}
+                            </DialogDescription>
                         </div>
                         <Badge variant={getStatusVariant(selectedBooking.status)} className="px-4 py-1 text-sm gap-2">
                            <div className={cn("w-2 h-2 rounded-full", 
@@ -613,7 +618,10 @@ export default function AdminBookingsPage() {
                             </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
-                            <AlertDialogHeader><AlertDialogTitle>Delete Record?</AlertDialogTitle><AlertDialogDescription>This removes the booking and frees any seats. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Record?</AlertDialogTitle>
+                              <AlertDialogDescription>This removes the booking and frees any seats. This cannot be undone.</AlertDialogDescription>
+                            </AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>Keep</AlertDialogCancel>
                                 <AlertDialogAction onClick={handleDeleteBooking} className={cn(buttonVariants({variant:'destructive'}))}>Delete</AlertDialogAction>
@@ -630,7 +638,10 @@ export default function AdminBookingsPage() {
                                 </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Cancel this booking?</AlertDialogTitle><AlertDialogDescription>This will mark the booking as cancelled and free up the seat on the trip. The customer will be notified.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
+                                  <AlertDialogDescription>This will mark the booking as cancelled and free up the seat on the trip. The customer will be notified.</AlertDialogDescription>
+                                </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Go Back</AlertDialogCancel>
                                     <AlertDialogAction onClick={handleCancelBooking}>Confirm Cancellation</AlertDialogAction>
