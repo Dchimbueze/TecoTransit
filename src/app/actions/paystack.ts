@@ -1,4 +1,3 @@
-
 'use server';
 
 import Paystack from 'paystack';
@@ -24,6 +23,11 @@ interface InitializeTransactionArgs {
  */
 export const initializeTransaction = async ({ email, amount, metadata, bookingData }: InitializeTransactionArgs) => {
   try {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    if (!baseUrl) {
+      throw new Error('NEXT_PUBLIC_BASE_URL is not configured.');
+    }
+
     // 1. Create the Pending booking first to "hold" the seat
     const pendingResult = await createPendingBooking(bookingData);
     if (!pendingResult.success || !pendingResult.booking) {
@@ -41,8 +45,12 @@ export const initializeTransaction = async ({ email, amount, metadata, bookingDa
       email,
       amount: Math.round(amount),
       metadata: updatedMetadata,
-      callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/callback`
+      callback_url: `${baseUrl}/payment/callback`
     });
+
+    if (!response || !response.data) {
+        throw new Error('Paystack initialization failed - No data returned from Paystack.');
+    }
 
     return { status: true, data: response.data };
   } catch (error: any) {
