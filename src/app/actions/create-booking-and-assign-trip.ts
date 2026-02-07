@@ -39,6 +39,8 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
         await newBookingRef.set(firestoreBooking);
         
         // Convert data for the internal assign function
+        // Note: FieldValue.serverTimestamp() won't be resolved until after the set, 
+        // so we pass a numeric timestamp for the immediate assignment logic.
         const bookingForAssignment = { 
             ...firestoreBooking, 
             createdAt: Date.now() 
