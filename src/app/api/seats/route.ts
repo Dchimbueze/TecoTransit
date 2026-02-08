@@ -1,6 +1,7 @@
-
 import { NextResponse } from 'next/server';
 import { getSeatAvailability } from '@/app/actions/get-seat-availability';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
         const availability = await getSeatAvailability(pickup, destination, vehicleType, date);
         return NextResponse.json(availability);
     } catch (error: any) {
+        console.error("Seat availability API error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

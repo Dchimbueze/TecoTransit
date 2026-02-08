@@ -23,11 +23,17 @@ export async function getSeatAvailability(
         const priceRuleRef = db.collection('prices').doc(priceRuleId);
         const priceRuleSnap = await priceRuleRef.get();
 
+        // If no price rule exists, or vehicle count is explicitly 0, return no availability.
         if (!priceRuleSnap.exists) {
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
         const priceRule = priceRuleSnap.data() as PriceRule;
+        
+        if (priceRule.vehicleCount === 0) {
+            return { availableSeats: 0, totalCapacity: 0, isFull: true };
+        }
+
         const vehicleKey = Object.keys(vehicleOptions).find(
             key => vehicleOptions[key as keyof typeof vehicleOptions].name === priceRule.vehicleType
         ) as keyof typeof vehicleOptions | undefined;
@@ -37,36 +43,38 @@ export async function getSeatAvailability(
         }
 
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
-        const totalCapacity = (priceRule.vehicleCount || 1) * capacityPerVehicle;
+        const totalCapacity = (priceRule.vehicleCount || 0) * capacityPerVehicle;
 
+        // Query all trips for this route and date to aggregate occupied seats
         const tripsQuery = db.collection('trips')
             .where('priceRuleId', '==', priceRuleId)
             .where('date', '==', date);
 
         const tripsSnapshot = await tripsQuery.get();
-        let occupiedSeats = 0;
+        let occupiedSeatsCount = 0;
 
         tripsSnapshot.forEach(doc => {
             const trip = doc.data() as Trip;
+            // Only count passengers whose hold hasn't expired, or who are confirmed (no heldUntil)
             const activePassengers = (trip.passengers || []).filter(p => {
                 if (p.heldUntil && p.heldUntil < now) {
                     return false;
                 }
                 return true;
             });
-            occupiedSeats += activePassengers.length;
+            occupiedSeatsCount += activePassengers.length;
         });
 
-        const availableSeats = Math.max(0, totalCapacity - occupiedSeats);
+        const availableSeatsCount = Math.max(0, totalCapacity - occupiedSeatsCount);
 
         return {
-            availableSeats,
+            availableSeats: availableSeatsCount,
             totalCapacity,
-            isFull: availableSeats <= 0,
+            isFull: availableSeatsCount <= 0,
         };
 
     } catch (error) {
-        console.error("Error fetching seat availability:", error);
+        console.error("Error calculating seat availability:", error);
         throw new Error("Failed to fetch seat availability.");
     }
 }
