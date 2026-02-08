@@ -135,6 +135,11 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
     return snapshot.size;
 }
 
+/**
+ * Manually reschedules a booking to a specific new date string.
+ * This function handles removing the passenger from their old manifest
+ * and re-assigning them to a new trip on the specified date.
+ */
 export async function manuallyRescheduleBooking(bookingId: string, newDate: string): Promise<{success: boolean; error?: string}> {
     const adminDb = getFirebaseAdmin()?.firestore();
     if (!adminDb) {
@@ -144,7 +149,6 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
     const bookingRef = adminDb.collection('bookings').doc(bookingId);
 
     try {
-        let oldTripId: string | undefined;
         let bookingForAssignment: any;
 
         await adminDb.runTransaction(async (transaction) => {
@@ -153,36 +157,44 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
                 throw new Error(`Booking ${bookingId} not found.`);
             }
             const bookingData = bookingDoc.data() as Booking;
-            oldTripId = bookingData.tripId;
+            const oldTripId = bookingData.tripId;
 
             bookingForAssignment = {
                 ...bookingData,
                 id: bookingDoc.id,
                 intendedDate: newDate,
-                createdAt: (bookingData.createdAt as any), 
+                createdAt: (bookingData.createdAt as any).toMillis?.() || bookingData.createdAt, 
             };
 
+            // 1. Remove from old trip manifest if it exists
             if (oldTripId) {
                 const oldTripRef = adminDb.collection('trips').doc(oldTripId);
-                const passengerToRemove = {
-                    bookingId: bookingId,
-                    name: bookingData.name,
-                    phone: bookingData.phone
-                };
-                transaction.update(oldTripRef, {
-                    passengers: FieldValue.arrayRemove(passengerToRemove)
-                });
+                const oldTripDoc = await transaction.get(oldTripRef);
+                
+                if (oldTripDoc.exists) {
+                    const oldTripData = oldTripDoc.data();
+                    const updatedPassengers = (oldTripData?.passengers || []).filter((p: any) => p.bookingId !== bookingId);
+                    transaction.update(oldTripRef, {
+                        passengers: updatedPassengers,
+                        isFull: updatedPassengers.length >= (oldTripData?.capacity || 0)
+                    });
+                }
             }
 
+            // 2. Update the booking document
             transaction.update(bookingRef, {
                 intendedDate: newDate,
                 tripId: FieldValue.delete(),
-                rescheduledCount: FieldValue.increment(1) 
+                rescheduledCount: FieldValue.increment(1),
+                updatedAt: FieldValue.serverTimestamp()
             });
         });
 
+        // 3. Re-assign to a trip on the new date
+        // Note: assignBookingToTrip has its own internal transaction
         await assignBookingToTrip(bookingForAssignment);
 
+        // 4. Notify the customer
         await sendManualRescheduleEmail({
             name: bookingForAssignment.name,
             email: bookingForAssignment.email,

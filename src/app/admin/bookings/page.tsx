@@ -95,6 +95,7 @@ export default function AdminBookingsPage() {
   const [isCustomDeleteOpen, setIsCustomDeleteOpen] = useState(false);
 
   const [newRescheduleDate, setNewRescheduleDate] = useState<Date | undefined>();
+  const [isReschedulePopoverOpen, setIsReschedulePopoverOpen] = useState(false);
   const [isRescheduleConfirmOpen, setIsRescheduleConfirmOpen] = useState(false);
 
   const fetchBookings = useCallback(async () => {
@@ -115,6 +116,7 @@ export default function AdminBookingsPage() {
   const openDialog = (bookingId: string) => {
     const booking = allBookings.find(b => b.id === bookingId);
     if (booking) {
+        setNewRescheduleDate(undefined); // Reset date input when opening new dialog
         setSelectedBooking(booking);
         setIsManageDialogOpen(true);
     }
@@ -367,7 +369,7 @@ export default function AdminBookingsPage() {
 
       {selectedBooking && (
         <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
-            <DialogContent className="p-0 max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border-none shadow-2xl">
+            <DialogContent key={selectedBooking.id} className="p-0 max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border-none shadow-2xl">
                 <DialogHeader className="p-6 bg-card border-b">
                     <div className="flex items-center justify-between">
                         <div>
@@ -424,12 +426,24 @@ export default function AdminBookingsPage() {
                         </div>
                         <div className="space-y-4 pt-6 border-t">
                             <h3 className="text-lg font-bold">Manual Reschedule</h3>
-                            <Popover>
+                            <Popover open={isReschedulePopoverOpen} onOpenChange={setIsReschedulePopoverOpen}>
                                 <PopoverTrigger asChild>
-                                    <Button variant="outline" className="w-full justify-start"><CalendarIcon className="mr-2 h-4 w-4" />{newRescheduleDate ? format(newRescheduleDate, 'PPP') : "Select new date"}</Button>
+                                    <Button variant="outline" className="w-full justify-start text-left"><CalendarIcon className="mr-2 h-4 w-4" />{newRescheduleDate ? format(newRescheduleDate, 'PPP') : "Select new date"}</Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="end">
-                                    <Calendar mode="single" selected={newRescheduleDate} onSelect={setNewRescheduleDate} initialFocus />
+                                <PopoverContent 
+                                    className="w-auto p-0" 
+                                    align="end" 
+                                    onPointerDownOutside={(e) => e.preventDefault()}
+                                >
+                                    <Calendar 
+                                        mode="single" 
+                                        selected={newRescheduleDate} 
+                                        onSelect={(date) => {
+                                            setNewRescheduleDate(date);
+                                            setIsReschedulePopoverOpen(false);
+                                        }} 
+                                        initialFocus 
+                                    />
                                 </PopoverContent>
                             </Popover>
                             <Button className="w-full font-bold" disabled={!newRescheduleDate || isProcessing.reschedule} onClick={() => setIsRescheduleConfirmOpen(true)}>
