@@ -2,12 +2,12 @@
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
-import type { PriceRule, Trip, SeatAvailability } from "@/lib/types";
+import type { PriceRule, Booking, SeatAvailability } from "@/lib/types";
 import { vehicleOptions } from "@/lib/constants";
 
 /**
- * Calculates real-time seat availability for a specific route, vehicle, and date.
- * Now filters by date in memory to avoid the need for complex composite indexes.
+ * Calculates real-time seat availability by counting bookings directly.
+ * This satisfies the requirement to fetch all relevant bookings and perform a count.
  */
 export async function getSeatAvailability(
     pickup: string,
@@ -23,8 +23,10 @@ export async function getSeatAvailability(
 
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
     const now = Date.now();
+    const HOLD_DURATION_MS = 7 * 60 * 1000; // 7 minutes window
 
     try {
+        // 1. Get the Price Rule to determine total allowed capacity
         const priceRuleRef = db.collection('prices').doc(priceRuleId);
         const priceRuleSnap = await priceRuleRef.get();
 
@@ -39,6 +41,7 @@ export async function getSeatAvailability(
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
+        // 2. Identify vehicle capacity
         const vehicleKey = Object.keys(vehicleOptions).find(
             key => vehicleOptions[key as keyof typeof vehicleOptions].name === priceRule.vehicleType
         ) as keyof typeof vehicleOptions | undefined;
@@ -50,41 +53,51 @@ export async function getSeatAvailability(
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
         const totalCapacity = (priceRule.vehicleCount || 0) * capacityPerVehicle;
 
-        // Query all trips for this specific route.
-        // We filter by date in memory to avoid requiring a composite index.
-        const tripsRef = db.collection('trips');
-        const tripsSnapshot = await tripsRef.where('priceRuleId', '==', priceRuleId).get();
+        // 3. Query BOOKINGS directly for this specific date
+        // We filter by date in the query and other fields in-memory to avoid index overhead.
+        const bookingsRef = db.collection('bookings');
+        const bookingsSnapshot = await bookingsRef.where('intendedDate', '==', date).get();
         
         let occupiedSeatsCount = 0;
-        let tripsFound = 0;
 
-        tripsSnapshot.forEach(doc => {
-            const trip = doc.data() as Trip;
+        bookingsSnapshot.forEach(doc => {
+            const booking = doc.data() as Booking;
             
-            // Only process trips for the requested date
-            if (trip.date === date) {
-                tripsFound++;
-                const activePassengers = (trip.passengers || []).filter(p => {
-                    // A passenger is active if they don't have a hold (Confirmed/Paid) 
-                    // or if their hold hasn't expired yet.
-                    if (p.heldUntil) {
-                        const holdTimestamp = Number(p.heldUntil);
-                        return holdTimestamp > now;
+            // Only count if it's the right route and vehicle
+            const isSameRoute = booking.pickup === pickup && 
+                              booking.destination === destination && 
+                              booking.vehicleType === vehicleType;
+
+            if (isSameRoute) {
+                // Determine if this booking is "occupying" a seat
+                const isConfirmedOrPaid = booking.status === 'Paid' || booking.status === 'Confirmed';
+                
+                // If pending, check if it's within the 7-minute hold window
+                let isActivePending = false;
+                if (booking.status === 'Pending' && booking.createdAt) {
+                    const createdAtMillis = typeof (booking.createdAt as any).toMillis === 'function' 
+                        ? (booking.createdAt as any).toMillis() 
+                        : Number(booking.createdAt);
+                    
+                    if (now - createdAtMillis < HOLD_DURATION_MS) {
+                        isActivePending = true;
                     }
-                    return true;
-                });
-                occupiedSeatsCount += activePassengers.length;
+                }
+
+                if (isConfirmedOrPaid || isActivePending) {
+                    occupiedSeatsCount++;
+                }
             }
         });
 
         const availableSeatsCount = Math.max(0, totalCapacity - occupiedSeatsCount);
 
-        console.log(`[getSeatAvailability] LOGIC CHECK:
+        console.log(`[getSeatAvailability] COUNT LOGIC:
             Route: ${pickup} -> ${destination}
-            Vehicle: ${vehicleType} (${priceRuleId})
+            Vehicle: ${vehicleType}
             Date: ${date}
-            Trips Found for Date: ${tripsFound}
-            Occupied/Held Seats: ${occupiedSeatsCount}
+            Total Bookings on Date: ${bookingsSnapshot.size}
+            Active/Occupied Count: ${occupiedSeatsCount}
             Total Allowed Capacity: ${totalCapacity}
             Resulting Available: ${availableSeatsCount}
         `);

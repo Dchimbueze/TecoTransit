@@ -1,3 +1,4 @@
+
 'use server';
 
 import type { Booking, BookingFormData, Passenger, PriceRule, Trip } from '@/lib/types';
@@ -27,6 +28,7 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     const newBookingRef = db.collection('bookings').doc();
     const bookingId = newBookingRef.id;
 
+    // Use a server timestamp for accurate TTL comparison later
     const firestoreBooking = {
         ...data,
         id: bookingId,
@@ -38,22 +40,24 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     try {
         await newBookingRef.set(firestoreBooking);
         
-        // We use Date.now() for the temporary hold calculation
-        const bookingForAssignment = { 
-            ...firestoreBooking, 
-            createdAt: Date.now() 
-        } as any;
-
-        await assignBookingToTrip(bookingForAssignment);
-
+        // Prepare local data for assignment logic
         const createdDoc = await newBookingRef.get();
         const createdData = createdDoc.data();
         
         if (!createdData) return { success: false, error: 'Failed to retrieve booking.' };
 
+        const bookingForAssignment = { 
+            ...createdData, 
+            id: bookingId,
+            createdAt: (createdData.createdAt as any).toMillis() 
+        } as Booking;
+
+        // Reservar el asiento en la colección de viajes para mantener el manifiesto
+        await assignBookingToTrip(bookingForAssignment);
+
         return { 
             success: true, 
-            booking: { ...createdData, createdAt: (createdData.createdAt as any).toMillis() } as Booking
+            booking: bookingForAssignment
         };
     } catch (error: any) {
         console.error("Error creating pending booking:", error);
@@ -63,6 +67,7 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
 
 /**
  * Atomically assigns a booking to a trip, handling temporary 7-minute holds.
+ * Uses Firestore transactions for high consistency.
  */
 export async function assignBookingToTrip(bookingData: Booking) {
     const admin = getFirebaseAdmin();
@@ -72,7 +77,7 @@ export async function assignBookingToTrip(bookingData: Booking) {
     const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate, status } = bookingData;
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
     
-    const HOLD_DURATION_MS = 7 * 60 * 1000; // 7 minutes window
+    const HOLD_DURATION_MS = 7 * 60 * 1000; 
     const now = Date.now();
 
     try {
@@ -87,14 +92,14 @@ export async function assignBookingToTrip(bookingData: Booking) {
             const vehicleKey = Object.keys(vehicleOptions).find(k => vehicleOptions[k as keyof typeof vehicleOptions].name === priceRule.vehicleType) as keyof typeof vehicleOptions;
             const capacity = vehicleOptions[vehicleKey].capacity;
 
-            // We query without orderBy to avoid composite index requirements
+            // Query existing trips for this date/route
             const tripsQuery = db.collection('trips')
                 .where('priceRuleId', '==', priceRuleId)
                 .where('date', '==', intendedDate);
             
             const tripsSnapshot = await transaction.get(tripsQuery);
             
-            // Sort in memory to fill vehicles in order
+            // Sort in memory to avoid needing a composite index
             const sortedTrips = [...tripsSnapshot.docs].sort((a, b) => (a.data().vehicleIndex || 0) - (b.data().vehicleIndex || 0));
             
             let assigned = false;
@@ -108,7 +113,7 @@ export async function assignBookingToTrip(bookingData: Booking) {
             for (const doc of sortedTrips) {
                 const trip = doc.data() as Trip;
                 
-                // Filter out expired holds within the transaction for accurate seat checking
+                // Filter active passengers in-memory
                 const activePassengers = (trip.passengers || []).filter(p => {
                     if (p.heldUntil && p.heldUntil < now) return false; 
                     return true;
@@ -129,7 +134,7 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 }
             }
 
-            // If no existing vehicle has space, create a new one if limit allows
+            // Create new trip if needed and allowed
             if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 0))) {
                 const maxIndex = sortedTrips.reduce((max, d) => Math.max(max, d.data().vehicleIndex || 0), 0);
                 const newIndex = maxIndex + 1;
