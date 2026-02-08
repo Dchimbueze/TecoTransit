@@ -1,5 +1,17 @@
+import dynamic from 'next/dynamic';
+import { Skeleton } from '@/components/ui/skeleton';
 
-import BookingForm from '@/components/booking-form';
+const BookingForm = dynamic(() => import('@/components/booking-form'), {
+  loading: () => (
+    <div className="space-y-6">
+      <Skeleton className="h-[400px] w-full rounded-lg" />
+      <div className="flex justify-between">
+        <Skeleton className="h-10 w-24" />
+        <Skeleton className="h-10 w-32" />
+      </div>
+    </div>
+  ),
+});
 
 export default function BookPage() {
   return (
