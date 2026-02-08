@@ -1,3 +1,4 @@
+
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
@@ -66,6 +67,9 @@ export async function getSeatAvailability(
         });
 
         const availableSeatsCount = Math.max(0, totalCapacity - occupiedSeatsCount);
+
+        // DEBUG LOGGING
+        console.log(`[getSeatAvailability] Route: ${pickup}->${destination}, Vehicle: ${vehicleType}, Date: ${date}, Occupied: ${occupiedSeatsCount}, Capacity: ${totalCapacity}, Available: ${availableSeatsCount}`);
 
         return {
             availableSeats: availableSeatsCount,

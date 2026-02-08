@@ -142,6 +142,8 @@ export default function BookingForm() {
                 const response = await fetch(`/api/seats?pickup=${pickup}&destination=${destination}&vehicleType=${vehicleType}&date=${dateStr}`);
                 const data = await response.json();
                 if (response.ok) {
+                    // DEBUG LOGGING
+                    console.log("[BookingForm] Seat Availability Received:", data);
                     setSeatAvailability(data);
                 } else {
                     throw new Error(data.error);
