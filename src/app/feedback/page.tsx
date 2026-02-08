@@ -1,5 +1,16 @@
+import dynamic from 'next/dynamic';
+import { Skeleton } from '@/components/ui/skeleton';
 
-import FeedbackForm from '@/components/feedback-form';
+const FeedbackForm = dynamic(() => import('@/components/feedback-form'), {
+  loading: () => (
+    <div className="space-y-4">
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-12 w-full" />
+    </div>
+  ),
+});
 
 export default function FeedbackPage() {
   return (
