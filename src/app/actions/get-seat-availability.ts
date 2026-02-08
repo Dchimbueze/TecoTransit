@@ -5,6 +5,10 @@ import { getFirebaseAdmin } from "@/lib/firebase-admin";
 import type { PriceRule, Trip, SeatAvailability } from "@/lib/types";
 import { vehicleOptions } from "@/lib/constants";
 
+/**
+ * Calculates real-time seat availability for a specific route, vehicle, and date.
+ * Now filters by date in memory to avoid the need for complex composite indexes.
+ */
 export async function getSeatAvailability(
     pickup: string,
     destination: string,
@@ -24,14 +28,14 @@ export async function getSeatAvailability(
         const priceRuleRef = db.collection('prices').doc(priceRuleId);
         const priceRuleSnap = await priceRuleRef.get();
 
-        // If no price rule exists, or vehicle count is explicitly 0, return no availability.
         if (!priceRuleSnap.exists) {
+            console.warn(`[getSeatAvailability] Price rule not found: ${priceRuleId}`);
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
         const priceRule = priceRuleSnap.data() as PriceRule;
         
-        if (priceRule.vehicleCount === 0) {
+        if (!priceRule.vehicleCount || priceRule.vehicleCount <= 0) {
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
@@ -46,30 +50,44 @@ export async function getSeatAvailability(
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
         const totalCapacity = (priceRule.vehicleCount || 0) * capacityPerVehicle;
 
-        // Query all trips for this route and date to aggregate occupied seats
-        const tripsQuery = db.collection('trips')
-            .where('priceRuleId', '==', priceRuleId)
-            .where('date', '==', date);
-
-        const tripsSnapshot = await tripsQuery.get();
+        // Query all trips for this specific route.
+        // We filter by date in memory to avoid requiring a composite index.
+        const tripsRef = db.collection('trips');
+        const tripsSnapshot = await tripsRef.where('priceRuleId', '==', priceRuleId).get();
+        
         let occupiedSeatsCount = 0;
+        let tripsFound = 0;
 
         tripsSnapshot.forEach(doc => {
             const trip = doc.data() as Trip;
-            // Only count passengers whose hold hasn't expired, or who are confirmed (no heldUntil)
-            const activePassengers = (trip.passengers || []).filter(p => {
-                if (p.heldUntil && p.heldUntil < now) {
-                    return false;
-                }
-                return true;
-            });
-            occupiedSeatsCount += activePassengers.length;
+            
+            // Only process trips for the requested date
+            if (trip.date === date) {
+                tripsFound++;
+                const activePassengers = (trip.passengers || []).filter(p => {
+                    // A passenger is active if they don't have a hold (Confirmed/Paid) 
+                    // or if their hold hasn't expired yet.
+                    if (p.heldUntil) {
+                        const holdTimestamp = Number(p.heldUntil);
+                        return holdTimestamp > now;
+                    }
+                    return true;
+                });
+                occupiedSeatsCount += activePassengers.length;
+            }
         });
 
         const availableSeatsCount = Math.max(0, totalCapacity - occupiedSeatsCount);
 
-        // DEBUG LOGGING
-        console.log(`[getSeatAvailability] Route: ${pickup}->${destination}, Vehicle: ${vehicleType}, Date: ${date}, Occupied: ${occupiedSeatsCount}, Capacity: ${totalCapacity}, Available: ${availableSeatsCount}`);
+        console.log(`[getSeatAvailability] LOGIC CHECK:
+            Route: ${pickup} -> ${destination}
+            Vehicle: ${vehicleType} (${priceRuleId})
+            Date: ${date}
+            Trips Found for Date: ${tripsFound}
+            Occupied/Held Seats: ${occupiedSeatsCount}
+            Total Allowed Capacity: ${totalCapacity}
+            Resulting Available: ${availableSeatsCount}
+        `);
 
         return {
             availableSeats: availableSeatsCount,
@@ -77,8 +95,8 @@ export async function getSeatAvailability(
             isFull: availableSeatsCount <= 0,
         };
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error calculating seat availability:", error);
-        throw new Error("Failed to fetch seat availability.");
+        throw new Error(`Failed to fetch seat availability: ${error.message}`);
     }
 }
