@@ -19,8 +19,9 @@ const ADMIN_EMAIL = 'tecotransportservices@gmail.com';
 
 /**
  * Creates a 'Pending' booking and holds a seat on a trip for 7 minutes.
+ * Accepts data where 'intendedDate' is already a string to prevent timezone shifts.
  */
-export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyPolicy'> & { totalFare: number }): Promise<CreateBookingResult> => {
+export const createPendingBooking = async (data: any): Promise<CreateBookingResult> => {
     const admin = getFirebaseAdmin();
     const db = admin?.firestore();
     if (!db) return { success: false, error: "Database connection failed." };
@@ -28,31 +29,34 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     const newBookingRef = db.collection('bookings').doc();
     const bookingId = newBookingRef.id;
 
-    // Use a server timestamp for accurate TTL comparison later
+    // Ensure intendedDate is a string. If it's a Date object (fallback), format it.
+    const dateStr = typeof data.intendedDate === 'string' 
+        ? data.intendedDate 
+        : format(new Date(data.intendedDate), 'yyyy-MM-dd');
+
     const firestoreBooking = {
         ...data,
         id: bookingId,
         createdAt: FieldValue.serverTimestamp(),
         status: 'Pending' as const,
-        intendedDate: format(data.intendedDate, 'yyyy-MM-dd'),
+        intendedDate: dateStr,
     };
     
     try {
         await newBookingRef.set(firestoreBooking);
         
-        // Prepare local data for assignment logic
         const createdDoc = await newBookingRef.get();
         const createdData = createdDoc.data();
         
         if (!createdData) return { success: false, error: 'Failed to retrieve booking.' };
 
+        // Convert Timestamp to milliseconds for client serialization
         const bookingForAssignment = { 
             ...createdData, 
             id: bookingId,
             createdAt: (createdData.createdAt as any).toMillis() 
         } as Booking;
 
-        // Reservar el asiento en la colección de viajes para mantener el manifiesto
         await assignBookingToTrip(bookingForAssignment);
 
         return { 
@@ -67,7 +71,6 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
 
 /**
  * Atomically assigns a booking to a trip, handling temporary 7-minute holds.
- * Uses Firestore transactions for high consistency.
  */
 export async function assignBookingToTrip(bookingData: Booking) {
     const admin = getFirebaseAdmin();
@@ -92,14 +95,12 @@ export async function assignBookingToTrip(bookingData: Booking) {
             const vehicleKey = Object.keys(vehicleOptions).find(k => vehicleOptions[k as keyof typeof vehicleOptions].name === priceRule.vehicleType) as keyof typeof vehicleOptions;
             const capacity = vehicleOptions[vehicleKey].capacity;
 
-            // Query existing trips for this date/route
             const tripsQuery = db.collection('trips')
                 .where('priceRuleId', '==', priceRuleId)
                 .where('date', '==', intendedDate);
             
             const tripsSnapshot = await transaction.get(tripsQuery);
             
-            // Sort in memory to avoid needing a composite index
             const sortedTrips = [...tripsSnapshot.docs].sort((a, b) => (a.data().vehicleIndex || 0) - (b.data().vehicleIndex || 0));
             
             let assigned = false;
@@ -112,8 +113,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
 
             for (const doc of sortedTrips) {
                 const trip = doc.data() as Trip;
-                
-                // Filter active passengers in-memory
                 const activePassengers = (trip.passengers || []).filter(p => {
                     if (p.heldUntil && p.heldUntil < now) return false; 
                     return true;
@@ -134,7 +133,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 }
             }
 
-            // Create new trip if needed and allowed
             if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 0))) {
                 const maxIndex = sortedTrips.reduce((max, d) => Math.max(max, d.data().vehicleIndex || 0), 0);
                 const newIndex = maxIndex + 1;

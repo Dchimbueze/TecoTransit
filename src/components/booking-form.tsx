@@ -142,7 +142,6 @@ export default function BookingForm() {
                 const response = await fetch(`/api/seats?pickup=${pickup}&destination=${destination}&vehicleType=${vehicleType}&date=${dateStr}`);
                 const data = await response.json();
                 if (response.ok) {
-                    // DEBUG LOGGING
                     console.log("[BookingForm] Seat Availability Received:", data);
                     setSeatAvailability(data);
                 } else {
@@ -192,33 +191,29 @@ export default function BookingForm() {
 
     try {
         const priceRuleId = `${formData.pickup}_${formData.destination}_${formData.vehicleType}`.toLowerCase().replace(/\s+/g, '-');
-        const bookingDataWithFare = { ...formData, totalFare };
+        
+        // Fix: Format date to string on client to avoid timezone shifts during serialization in Server Actions
+        const formattedDate = format(formData.intendedDate, 'yyyy-MM-dd');
+        const { privacyPolicy, ...bookingData } = formData;
+        
+        const bookingDataWithFare = { 
+            ...bookingData, 
+            intendedDate: formattedDate, // Now a string
+            totalFare 
+        };
 
         if (isPaystackEnabled) {
-            const cleanBookingDataForHold = {
-              name: bookingDataWithFare.name,
-              email: bookingDataWithFare.email,
-              phone: bookingDataWithFare.phone,
-              pickup: bookingDataWithFare.pickup,
-              destination: bookingDataWithFare.destination,
-              intendedDate: bookingDataWithFare.intendedDate,
-              vehicleType: bookingDataWithFare.vehicleType,
-              luggageCount: bookingDataWithFare.luggageCount,
-              totalFare: bookingDataWithFare.totalFare,
-              allowReschedule: bookingDataWithFare.allowReschedule,
-            };
-
             const result = await initializeTransaction({
-                email: cleanBookingDataForHold.email,
-                amount: cleanBookingDataForHold.totalFare * 100, 
+                email: bookingDataWithFare.email,
+                amount: bookingDataWithFare.totalFare * 100, 
                 metadata: {
                     priceRuleId,
                     custom_fields: [
-                        { display_name: "Customer Name", variable_name: "customer_name", value: cleanBookingDataForHold.name },
-                        { display_name: "Route", variable_name: "route", value: `${cleanBookingDataForHold.pickup} to ${cleanBookingDataForHold.destination}` }
+                        { display_name: "Customer Name", variable_name: "customer_name", value: bookingDataWithFare.name },
+                        { display_name: "Route", variable_name: "route", value: `${bookingDataWithFare.pickup} to ${bookingDataWithFare.destination}` }
                     ]
                 },
-                bookingData: cleanBookingDataForHold
+                bookingData: bookingDataWithFare
             });
             
             if (result.status && result.data?.authorization_url) {
