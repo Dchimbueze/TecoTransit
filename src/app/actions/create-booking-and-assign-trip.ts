@@ -38,6 +38,7 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     try {
         await newBookingRef.set(firestoreBooking);
         
+        // We use Date.now() for the temporary hold calculation
         const bookingForAssignment = { 
             ...firestoreBooking, 
             createdAt: Date.now() 
@@ -80,20 +81,23 @@ export async function assignBookingToTrip(bookingData: Booking) {
         await db.runTransaction(async (transaction) => {
             const priceRuleRef = db.doc(`prices/${priceRuleId}`);
             const priceRuleSnap = await transaction.get(priceRuleRef);
-            if (!priceRuleSnap.exists) throw new Error("Price rule not found.");
+            if (!priceRuleSnap.exists) throw new Error("Price rule not found for this route.");
             
             const priceRule = priceRuleSnap.data() as PriceRule;
             const vehicleKey = Object.keys(vehicleOptions).find(k => vehicleOptions[k as keyof typeof vehicleOptions].name === priceRule.vehicleType) as keyof typeof vehicleOptions;
             const capacity = vehicleOptions[vehicleKey].capacity;
 
+            // We query without orderBy to avoid composite index requirements
             const tripsQuery = db.collection('trips')
                 .where('priceRuleId', '==', priceRuleId)
-                .where('date', '==', intendedDate)
-                .orderBy('vehicleIndex');
+                .where('date', '==', intendedDate);
             
             const tripsSnapshot = await transaction.get(tripsQuery);
-            let assigned = false;
             
+            // Sort in memory to fill vehicles in order
+            const sortedTrips = [...tripsSnapshot.docs].sort((a, b) => (a.data().vehicleIndex || 0) - (b.data().vehicleIndex || 0));
+            
+            let assigned = false;
             const passenger: Passenger = { 
                 bookingId, 
                 name, 
@@ -101,9 +105,10 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 heldUntil: status === 'Pending' ? now + HOLD_DURATION_MS : undefined
             };
 
-            for (const doc of tripsSnapshot.docs) {
+            for (const doc of sortedTrips) {
                 const trip = doc.data() as Trip;
                 
+                // Filter out expired holds within the transaction for accurate seat checking
                 const activePassengers = (trip.passengers || []).filter(p => {
                     if (p.heldUntil && p.heldUntil < now) return false; 
                     return true;
@@ -124,9 +129,12 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 }
             }
 
-            if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 1))) {
-                const newIndex = tripsSnapshot.size + 1;
+            // If no existing vehicle has space, create a new one if limit allows
+            if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 0))) {
+                const maxIndex = sortedTrips.reduce((max, d) => Math.max(max, d.data().vehicleIndex || 0), 0);
+                const newIndex = maxIndex + 1;
                 const newTripId = `${priceRuleId}_${intendedDate}_${newIndex}`;
+                
                 const newTrip: Trip = {
                     id: newTripId,
                     priceRuleId,
@@ -137,18 +145,24 @@ export async function assignBookingToTrip(bookingData: Booking) {
                     passengers: [passenger],
                     isFull: capacity <= 1,
                 };
+                
                 transaction.set(db.collection('trips').doc(newTripId), newTrip);
                 assigned = true;
                 assignedTripId = newTripId;
             }
 
-            if (!assigned) throw new Error("Trip is currently full.");
-            if (assignedTripId) transaction.update(db.collection('bookings').doc(bookingId), { tripId: assignedTripId });
+            if (!assigned) throw new Error("This trip is currently full.");
+            
+            if (assignedTripId) {
+                transaction.update(db.collection('bookings').doc(bookingId), { tripId: assignedTripId });
+            }
         });
         
-        if (assignedTripId) await checkAndConfirmTrip(db, assignedTripId);
+        if (assignedTripId) {
+            await checkAndConfirmTrip(db, assignedTripId);
+        }
     } catch (error: any) {
-        console.error(`Transaction failed for booking ${bookingId}:`, error);
+        console.error(`Assignment transaction failed for booking ${bookingId}:`, error);
         await sendOverflowEmail(bookingData, error.message);
         throw error;
     }
@@ -161,9 +175,9 @@ async function sendOverflowEmail(bookingDetails: any, reason: string) {
             from: 'TecoTransit Alert <alert@tecotransit.org>',
             to: [ADMIN_EMAIL],
             subject: 'Urgent: Vehicle Capacity Alert',
-            html: `<p>Booking ${bookingDetails.id} assignment failed: ${reason}</p>`,
+            html: `<p>Booking assignment for ${bookingDetails.name} (${bookingDetails.id}) failed: <strong>${reason}</strong></p>`,
         });
-    } catch(e) { console.error("Failed alert email:", e); }
+    } catch(e) { console.error("Failed to send overflow alert email:", e); }
 }
 
 export async function checkAndConfirmTrip(db: any, tripId: string) {
@@ -188,7 +202,11 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
     if (bookingsToConfirm.length === 0) return;
 
     const batch = db.batch();
-    bookingsToConfirm.forEach((d: any) => batch.update(d.ref, { status: 'Confirmed', confirmedDate: trip.date }));
+    bookingsToConfirm.forEach((d: any) => batch.update(d.ref, { 
+        status: 'Confirmed', 
+        confirmedDate: trip.date,
+        updatedAt: FieldValue.serverTimestamp()
+    }));
     await batch.commit();
 
     for (const d of bookingsToConfirm) {
@@ -203,6 +221,6 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
             vehicleType: data.vehicleType,
             totalFare: data.totalFare,
             confirmedDate: trip.date,
-        }).catch(e => console.error("Email failed:", e));
+        }).catch(e => console.error("Failed to send confirmation email:", e));
     }
 }
