@@ -1,4 +1,3 @@
-
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
@@ -7,7 +6,6 @@ import { assignBookingToTrip } from "./create-booking-and-assign-trip";
 import type { Booking, Trip, Passenger } from "@/lib/types";
 import { sendBookingRescheduledEmail, sendRescheduleFailedEmail } from "./send-email";
 import { FieldValue } from 'firebase-admin/firestore';
-import { vehicleOptions } from "@/lib/constants";
 
 type RescheduleResult = {
     totalTripsScanned: number;
@@ -22,9 +20,8 @@ type RescheduleResult = {
  * Finds all trips from the previous day that were not full, attempts to reschedule
  * the passengers to a trip on the current day, and then deletes the old, empty trip.
  * 
- * This action is designed to be run as an automated daily job (cron job).
- * It ensures that the process of moving a passenger from an old trip to a new one
- * is atomic and fails safely, preventing data inconsistency.
+ * This action ensures that the process of moving a passenger from an old trip to a new one
+ * is handled using stable YYYY-MM-DD date strings.
  */
 export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
     const db = getFirebaseAdmin()?.firestore();
@@ -32,9 +29,11 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
         throw new Error("Database connection failed.");
     }
 
-    const yesterday = subDays(startOfDay(new Date()), 1);
+    // Use UTC/Server time for consistency in the cron job
+    const now = new Date();
+    const yesterday = subDays(now, 1);
     const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayStr = format(now, 'yyyy-MM-dd');
     
     const result: RescheduleResult = {
         totalTripsScanned: 0,
@@ -45,6 +44,8 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
         errors: [],
     };
 
+    console.log(`[RescheduleJob] Starting job for Yesterday: ${yesterdayStr} -> Today: ${todayStr}`);
+
     try {
         const underfilledTripsQuery = db.collection('trips')
             .where('date', '==', yesterdayStr)
@@ -54,6 +55,7 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
         result.totalTripsScanned = snapshot.size;
 
         if (snapshot.empty) {
+            console.log(`[RescheduleJob] No underfilled trips found for ${yesterdayStr}`);
             return result;
         }
 
@@ -64,93 +66,72 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
 
             for (const passenger of passengersToProcess) {
                 const bookingRef = db.collection('bookings').doc(passenger.bookingId);
-                const oldTripRef = tripDoc.ref;
-                let emailProps: any = null; // Variable to hold email data
-                let bookingForAssignment: (Omit<Booking, 'createdAt'> & {id: string, createdAt: any}) | null = null;
-
+                let bookingForAssignment: any = null;
 
                 try {
                     await db.runTransaction(async (transaction) => {
                         const bookingDoc = await transaction.get(bookingRef);
-                        if (!bookingDoc.exists) {
-                            throw new Error(`Booking ${passenger.bookingId} not found during transaction.`);
-                        }
-                        const bookingData = { id: bookingDoc.id, ...bookingDoc.data() } as Omit<Booking, 'createdAt'> & {id: string, createdAt: any};
+                        if (!bookingDoc.exists) return;
+
+                        const bookingData = bookingDoc.data() as Booking;
                         
-                        // 1. Skip if user opted out, booking was cancelled, or already rescheduled once
+                        // 1. Skip if user opted out or booking was cancelled
                         if (!bookingData.allowReschedule || bookingData.status === 'Cancelled') {
                             result.skippedCount++;
-                            return; // Exit transaction for this passenger
+                            return;
                         }
                         
+                        // 2. Prevent infinite rescheduling (limit to 1 auto-move)
                         if ((bookingData.rescheduledCount || 0) >= 1) {
                             result.skippedCount++;
-                            await sendRescheduleFailedEmail(bookingData as Booking);
-                            return; // Stop processing this passenger
+                            // Alert admin that this passenger is stuck and needs manual attention
+                            await sendRescheduleFailedEmail(bookingData);
+                            return; 
                         }
 
-                        // 2. Remove from old trip (this happens implicitly when the trip is deleted, but good for atomicity)
-                        transaction.update(oldTripRef, { passengers: FieldValue.arrayRemove(passenger) });
-                        
-                        // 3. Update booking to new date, remove old tripId, and increment reschedule count
+                        // 3. Update booking doc
                         transaction.update(bookingRef, { 
                             intendedDate: todayStr, 
                             tripId: FieldValue.delete(),
-                            rescheduledCount: FieldValue.increment(1)
+                            rescheduledCount: FieldValue.increment(1),
+                            updatedAt: FieldValue.serverTimestamp()
                         });
-                        
-                        // 4. Prepare data for re-assignment and email, to be used *after* transaction commits
-                        emailProps = {
-                            name: bookingData.name,
-                            email: bookingData.email,
-                            bookingId: bookingData.id,
-                            oldDate: yesterdayStr,
-                            newDate: todayStr,
-                        };
 
-                        // We need the full booking data for the assignment logic
                         bookingForAssignment = {
-                            ...bookingData
+                            ...bookingData,
+                            id: bookingDoc.id,
+                            intendedDate: todayStr,
+                            createdAt: (bookingData.createdAt as any).toMillis?.() || bookingData.createdAt
                         };
                     });
 
-                    // If transaction was successful, re-assign to a new trip and send email
-                    if (bookingForAssignment && emailProps) {
-                       // Now explicitly re-run the assignment logic with the new date
-                       await assignBookingToTrip({
-                           ...bookingForAssignment,
-                           intendedDate: todayStr, // Ensure the new date is used for assignment
+                    // 4. Assign to new trip if transaction succeeded
+                    if (bookingForAssignment) {
+                       await assignBookingToTrip(bookingForAssignment);
+                       await sendBookingRescheduledEmail({
+                           name: bookingForAssignment.name,
+                           email: bookingForAssignment.email,
+                           bookingId: bookingForAssignment.id,
+                           oldDate: yesterdayStr,
+                           newDate: todayStr,
                        });
-
-                       // If assignment succeeds, send email
-                       await sendBookingRescheduledEmail(emailProps);
                        result.rescheduledCount++;
                     }
 
                 } catch (e: any) {
                     result.failedCount++;
-                    const errorMessage = `Failed to process booking ${passenger.bookingId}: ${e.message}`;
-                    result.errors.push(errorMessage);
-                    console.error(errorMessage, e);
+                    result.errors.push(`Booking ${passenger.bookingId}: ${e.message}`);
                 }
             }
 
-            // After processing all passengers for the trip, delete the old trip document.
-            // This happens regardless of individual passenger success/failure, as the trip itself
-            // is from a past date and has been processed.
-            try {
-                await tripDoc.ref.delete();
-            } catch (deleteError: any) {
-                const deleteErrorMessage = `Failed to delete old trip ${tripDoc.id} after rescheduling: ${deleteError.message}`;
-                result.errors.push(deleteErrorMessage);
-                console.error(deleteErrorMessage);
-            }
+            // Cleanup the old trip document
+            await tripDoc.ref.delete().catch(e => console.error("Failed to delete trip doc:", e));
         }
         
         return result;
 
     } catch (error: any) {
-        console.error("A critical error occurred during the rescheduling process:", error);
-        throw new Error("Failed to execute reschedule job due to a server error.");
+        console.error("Critical error in reschedule job:", error);
+        throw error;
     }
 }
