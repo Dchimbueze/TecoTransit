@@ -36,6 +36,7 @@ export default function RootLayout({
       </head>
       <body
         className={`${ptSans.variable} ${playfairDisplay.variable} font-body antialiased flex flex-col h-full bg-background`}
+        suppressHydrationWarning
       >
         <LayoutWrapper>
           {children}
