@@ -21,6 +21,9 @@ const playfairDisplay = Playfair_Display({
 export const metadata = {
   title: 'TecoTransit',
   description: 'Book Your Trip with TecoTransit. Fast, reliable, and comfortable rides to your destination.',
+};
+
+export const viewport = {
   themeColor: '#D4AF37',
 };
 
