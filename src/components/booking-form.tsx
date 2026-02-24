@@ -21,7 +21,7 @@ import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, Cr
 import { cn } from '@/lib/utils';
 import { Checkbox } from './ui/checkbox';
 import BookingConfirmationDialog from './booking-confirmation-dialog';
-import { initializeTransaction } from '@/app/actions/paystack';
+import { initializeOPayTransaction } from '@/app/actions/opay';
 import { useRouter } from 'next/navigation';
 import { useSettings } from '@/context/settings-context';
 import { createPendingBooking } from '@/app/actions/create-booking-and-assign-trip';
@@ -63,7 +63,7 @@ export default function BookingForm() {
   const { toast } = useToast();
   const [prices, setPrices] = useState<PriceRule[]>([]);
   const [pricesLoading, setPricesLoading] = useState(true);
-  const { isPaystackEnabled, bookingDateRange, loading: settingsLoading } = useSettings();
+  const { isOPayEnabled, bookingDateRange, loading: settingsLoading } = useSettings();
   const router = useRouter();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -192,26 +192,21 @@ export default function BookingForm() {
     try {
         const priceRuleId = `${formData.pickup}_${formData.destination}_${formData.vehicleType}`.toLowerCase().replace(/\s+/g, '-');
         
-        // Fix: Format date to string on client to avoid timezone shifts during serialization in Server Actions
         const formattedDate = format(formData.intendedDate, 'yyyy-MM-dd');
         const { privacyPolicy, ...bookingData } = formData;
         
         const bookingDataWithFare = { 
             ...bookingData, 
-            intendedDate: formattedDate, // Now a string
+            intendedDate: formattedDate,
             totalFare 
         };
 
-        if (isPaystackEnabled) {
-            const result = await initializeTransaction({
+        if (isOPayEnabled) {
+            const result = await initializeOPayTransaction({
                 email: bookingDataWithFare.email,
-                amount: bookingDataWithFare.totalFare * 100, 
+                amount: bookingDataWithFare.totalFare, 
                 metadata: {
                     priceRuleId,
-                    custom_fields: [
-                        { display_name: "Customer Name", variable_name: "customer_name", value: bookingDataWithFare.name },
-                        { display_name: "Route", variable_name: "route", value: `${bookingDataWithFare.pickup} to ${bookingDataWithFare.destination}` }
-                    ]
                 },
                 bookingData: bookingDataWithFare
             });
@@ -219,7 +214,7 @@ export default function BookingForm() {
             if (result.status && result.data?.authorization_url) {
                 router.push(result.data.authorization_url);
             } else {
-                throw new Error(result.message || 'Failed to initialize transaction.');
+                throw new Error(result.message || 'Failed to initialize OPay transaction.');
             }
         } else {
             await createPendingBooking(bookingDataWithFare);
@@ -247,8 +242,8 @@ export default function BookingForm() {
 
    const renderSubmitButtonContent = () => {
     const isLoading = isProcessing || settingsLoading;
-    const buttonText = settingsLoading ? 'Loading...' : isProcessing ? 'Processing...' : isPaystackEnabled ? 'Proceed to Payment' : 'Submit Booking';
-    const Icon = isLoading ? Loader2 : isPaystackEnabled ? CreditCard : Send;
+    const buttonText = settingsLoading ? 'Loading...' : isProcessing ? 'Redirecting...' : isOPayEnabled ? 'Proceed to Payment' : 'Submit Booking';
+    const Icon = isLoading ? Loader2 : isOPayEnabled ? CreditCard : Send;
     
     return (
         <>
@@ -299,7 +294,7 @@ export default function BookingForm() {
       <Form {...form}>
         <form onSubmit={formHandleSubmit(onBookingSubmit)}>
           <CardContent className="space-y-8 pt-6">
-            {isPaystackEnabled && (
+            {isOPayEnabled && (
                 <Alert variant="default" className="bg-primary/10 border-primary/20">
                     <Timer className="h-4 w-4 text-primary" />
                     <AlertTitle className="text-primary font-bold">Important Notice</AlertTitle>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
@@ -10,7 +11,7 @@ interface DateRange {
 }
 
 interface SettingsContextType {
-  isPaystackEnabled: boolean;
+  isOPayEnabled: boolean;
   bookingDateRange: DateRange | undefined;
   loading: boolean;
 }
@@ -19,7 +20,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
   const [settings, setSettings] = useState<SettingsContextType>({
-    isPaystackEnabled: true,
+    isOPayEnabled: true,
     bookingDateRange: undefined,
     loading: true,
   });
@@ -30,7 +31,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
       if (snapshot.exists()) {
         setSettings(prev => ({
           ...prev,
-          isPaystackEnabled: snapshot.data().isPaystackEnabled ?? true,
+          isOPayEnabled: snapshot.data().isOPayEnabled ?? true,
           loading: false,
         }));
       } else {
