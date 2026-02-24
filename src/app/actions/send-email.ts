@@ -1,3 +1,4 @@
+
 'use server';
 
 import { Resend } from 'resend';
@@ -124,9 +125,9 @@ export const sendRefundRequestEmail = async (props: SendRefundRequestEmailProps)
                 <li><strong>Booking ID:</strong> ${props.bookingId}</li>
                 <li><strong>Customer:</strong> ${props.customerName} (${props.customerEmail})</li>
                 <li><strong>Amount Paid:</strong> ₦${props.totalFare.toLocaleString()}</li>
-                <li><strong>Paystack Reference:</strong> ${props.paymentReference}</li>
+                <li><strong>OPay Reference:</strong> ${props.paymentReference}</li>
             </ul>
-            <p>Please process this refund via the Paystack dashboard and update the customer.</p>
+            <p>Please process this refund via the OPay dashboard and update the customer.</p>
         `,
     });
 

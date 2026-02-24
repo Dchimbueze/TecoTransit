@@ -1,8 +1,9 @@
+
 'use client';
 
 import { Suspense, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { verifyTransactionAndCreateBooking } from '@/app/actions/paystack';
+import { verifyOPayTransaction } from '@/app/actions/opay';
 import { CheckCircle, AlertCircle, Loader2, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -16,11 +17,12 @@ function PaymentCallback() {
   const verificationStarted = useRef(false);
 
   useEffect(() => {
-    const reference = searchParams.get('reference');
+    // OPay usually sends 'reference' or 'orderNo' back depending on redirect method
+    const reference = searchParams.get('reference') || searchParams.get('orderNo');
 
     if (!reference) {
       setStatus('error');
-      setMessage('Payment was not successful.');
+      setMessage('Payment reference missing or session expired.');
       return;
     }
     
@@ -29,18 +31,18 @@ function PaymentCallback() {
 
     const verify = async () => {
       try {
-        const result = await verifyTransactionAndCreateBooking(reference);
+        const result = await verifyOPayTransaction(reference);
         if (result.success) {
           setStatus('success');
           setMessage(`Booking confirmed! Your reference ID is ${result.bookingId?.substring(0, 8)}.`);
         } else {
           setStatus('error');
-          setMessage(result.error || 'Payment was not successful.');
+          setMessage(result.error || 'Payment verification failed.');
         }
       } catch (error: any) {
         console.error('Verification error:', error);
         setStatus('error');
-        setMessage('Payment was not successful.');
+        setMessage('An unexpected error occurred during verification.');
       }
     };
 
@@ -77,7 +79,7 @@ function PaymentCallback() {
             <div className="flex items-center justify-center h-20 w-20 rounded-full bg-destructive/10 border-4 border-destructive/20 mb-8">
                <AlertCircle className="h-12 w-12 text-destructive" />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-4">An Error Occurred</h1>
+            <h1 className="text-3xl font-bold text-white mb-4">Payment Failed</h1>
             <p className="text-gray-400 mb-10 leading-relaxed">{message}</p>
             <Button asChild className="w-full h-12 font-bold text-lg bg-primary hover:bg-primary/90 text-primary-foreground" size="lg">
               <Link href="/">

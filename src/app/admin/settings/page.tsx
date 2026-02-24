@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, TestTube2, Loader2, Calendar as CalendarIcon } from "lucide-react";
+import { CreditCard, TestTube2, Loader2, Calendar as CalendarIcon, Wallet } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ const paymentSettingsDocRef = doc(db, "settings", "payment");
 const bookingSettingsDocRef = doc(db, "settings", "booking");
 
 export default function AdminSettingsPage() {
-  const [isPaystackEnabled, setIsPaystackEnabled] = useState(true);
+  const [isOPayEnabled, setIsOPayEnabled] = useState(true);
   const [bookingDateRange, setBookingDateRange] = useState<DateRange | undefined>();
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -29,9 +29,9 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     const unsubPayment = onSnapshot(paymentSettingsDocRef, (docSnap) => {
       if (docSnap.exists()) {
-        setIsPaystackEnabled(docSnap.data().isPaystackEnabled);
+        setIsOPayEnabled(docSnap.data().isOPayEnabled ?? true);
       } else {
-        setDoc(paymentSettingsDocRef, { isPaystackEnabled: true });
+        setDoc(paymentSettingsDocRef, { isOPayEnabled: true });
       }
       setLoading(false);
     }, (error) => {
@@ -69,10 +69,10 @@ export default function AdminSettingsPage() {
 
   const handleTogglePayment = async (enabled: boolean) => {
     try {
-      await setDoc(paymentSettingsDocRef, { isPaystackEnabled: enabled });
+      await setDoc(paymentSettingsDocRef, { isOPayEnabled: enabled });
       toast({
         title: "Settings Updated",
-        description: `Paystack integration is now ${enabled ? "enabled" : "disabled"}.`,
+        description: `OPay integration is now ${enabled ? "enabled" : "disabled"}.`,
       });
     } catch (error) {
       console.error("Error updating settings:", error);
@@ -177,25 +177,25 @@ export default function AdminSettingsPage() {
         <CardContent>
           <div className="flex items-center justify-between space-x-4 rounded-lg border p-4">
             <div className="space-y-1">
-              <Label htmlFor="paystack-toggle" className="text-base font-semibold">
-                Enable Paystack Payments
+              <Label htmlFor="opay-toggle" className="text-base font-semibold">
+                Enable OPay Merchant Payments
               </Label>
               <p className="text-sm text-muted-foreground">
-                When disabled, the booking form will bypass Paystack and create a 'Pending' booking for testing.
+                When disabled, the booking form will bypass OPay and create a 'Pending' booking for testing.
               </p>
             </div>
             {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
                 <div className="flex items-center space-x-2">
-                {isPaystackEnabled ? (
-                    <CreditCard className="h-5 w-5 text-primary" />
+                {isOPayEnabled ? (
+                    <Wallet className="h-5 w-5 text-primary" />
                 ) : (
                     <TestTube2 className="h-5 w-5 text-amber-500" />
                 )}
                 <Switch
-                    id="paystack-toggle"
-                    checked={isPaystackEnabled}
+                    id="opay-toggle"
+                    checked={isOPayEnabled}
                     onCheckedChange={handleTogglePayment}
                 />
                 </div>
