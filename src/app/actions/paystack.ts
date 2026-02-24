@@ -1,3 +1,2 @@
-
-// This file is deprecated and replaced by opay.ts
+// This file has been removed as the application now uses OPay.
 export {};
