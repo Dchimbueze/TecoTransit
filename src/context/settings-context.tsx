@@ -26,6 +26,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   });
 
   useEffect(() => {
+    // Listen to the 'global' settings document
     const unsub = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
@@ -41,7 +42,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
         setSettings(prev => ({ ...prev, loading: false }));
       }
     }, (error) => {
-      console.error("Error fetching settings:", error);
+      console.error("Error fetching global settings:", error);
       setSettings(prev => ({ ...prev, loading: false }));
     });
 

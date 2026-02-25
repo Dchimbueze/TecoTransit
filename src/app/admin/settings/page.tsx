@@ -16,8 +16,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 
-const paymentSettingsDocRef = doc(db, "settings", "payment");
-const bookingSettingsDocRef = doc(db, "settings", "booking");
+const globalSettingsDocRef = doc(db, "settings", "global");
 
 export default function AdminSettingsPage() {
   const [isPaystackEnabled, setIsPaystackEnabled] = useState(true);
@@ -27,78 +26,57 @@ export default function AdminSettingsPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    const unsubPayment = onSnapshot(paymentSettingsDocRef, (docSnap) => {
+    const unsub = onSnapshot(globalSettingsDocRef, (docSnap) => {
       if (docSnap.exists()) {
-        setIsPaystackEnabled(docSnap.data().isPaystackEnabled);
+        const data = docSnap.data();
+        setIsPaystackEnabled(data.isPaystackEnabled ?? true);
+        
+        if (data.bookingDateRange) {
+            setBookingDateRange({
+                from: data.bookingDateRange.from ? new Date(data.bookingDateRange.from) : undefined,
+                to: data.bookingDateRange.to ? new Date(data.bookingDateRange.to) : undefined,
+            });
+        }
       } else {
-        setDoc(paymentSettingsDocRef, { isPaystackEnabled: true });
+        setDoc(globalSettingsDocRef, { isPaystackEnabled: true });
       }
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching payment settings:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Could not fetch payment settings.",
-      });
+      console.error("Error fetching settings:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not fetch settings." });
       setLoading(false);
     });
 
-    const unsubBooking = onSnapshot(bookingSettingsDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            const range: DateRange = {};
-            if (data.startDate) range.from = data.startDate.toDate();
-            if (data.endDate) range.to = data.endDate.toDate();
-            setBookingDateRange(range);
-        }
-    }, (error) => {
-        console.error("Error fetching booking settings:", error);
-        toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Could not fetch booking settings.",
-        });
-    });
-
-    return () => {
-        unsubPayment();
-        unsubBooking();
-    };
+    return () => unsub();
   }, [toast]);
 
   const handleTogglePayment = async (enabled: boolean) => {
     try {
-      await setDoc(paymentSettingsDocRef, { isPaystackEnabled: enabled });
-      toast({
-        title: "Settings Updated",
-        description: `Paystack integration is now ${enabled ? "enabled" : "disabled"}.`,
-      });
+      await setDoc(globalSettingsDocRef, { isPaystackEnabled: enabled }, { merge: true });
+      toast({ title: "Settings Updated", description: `Paystack is now ${enabled ? "enabled" : "disabled"}.` });
     } catch (error) {
-      console.error("Error updating settings:", error);
-      toast({
-        variant: "destructive",
-        title: "Update Failed",
-        description: "Could not update payment settings.",
-      });
+      console.error("Error updating payment settings:", error);
+      toast({ variant: "destructive", title: "Update Failed", description: "Could not update payment settings." });
     }
   };
 
   const handleSaveBookingWindow = async () => {
     if (!bookingDateRange?.from || !bookingDateRange?.to) {
-        toast({ variant: "destructive", title: "Invalid Range", description: "Please select a start and end date." });
+        toast({ variant: "destructive", title: "Invalid Range", description: "Please select start and end dates." });
         return;
     }
     setIsSaving(true);
     try {
-        await setDoc(bookingSettingsDocRef, {
-            startDate: Timestamp.fromDate(bookingDateRange.from),
-            endDate: Timestamp.fromDate(bookingDateRange.to),
-        });
+        await setDoc(globalSettingsDocRef, {
+            bookingDateRange: {
+                from: bookingDateRange.from.toISOString(),
+                to: bookingDateRange.to.toISOString(),
+            },
+        }, { merge: true });
         toast({ title: "Settings Saved", description: "The booking window has been updated." });
     } catch (error) {
         console.error("Error saving booking window:", error);
-        toast({ variant: "destructive", title: "Save Failed", description: "Could not save the booking window." });
+        toast({ variant: "destructive", title: "Save Failed", description: "Could not save settings." });
     } finally {
         setIsSaving(false);
     }
@@ -108,53 +86,30 @@ export default function AdminSettingsPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold font-headline">Application Settings</h1>
-        <p className="text-muted-foreground">Manage integrations and other application settings.</p>
+        <p className="text-muted-foreground">Manage Paystack integration and booking windows.</p>
       </div>
 
        <Card className="max-w-2xl">
         <CardHeader>
-          <CardTitle>Booking Window Settings</CardTitle>
-          <CardDescription>
-            Define the range of dates for which customers can make bookings.
-          </CardDescription>
+          <CardTitle>Booking Window</CardTitle>
+          <CardDescription>Define when customers can travel.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
              <div className="grid gap-2">
-                <Label>Select Available Date Range</Label>
+                <Label>Date Range</Label>
                 <Popover>
                     <PopoverTrigger asChild>
-                    <Button
-                        id="date"
-                        variant={"outline"}
-                        className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !bookingDateRange && "text-muted-foreground"
-                        )}
-                    >
+                    <Button variant={"outline"} className={cn("w-full justify-start text-left", !bookingDateRange && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {bookingDateRange?.from ? (
-                        bookingDateRange.to ? (
-                            <>
-                            {format(bookingDateRange.from, "LLL dd, y")} -{" "}
-                            {format(bookingDateRange.to, "LLL dd, y")}
-                            </>
-                        ) : (
-                            format(bookingDateRange.from, "LLL dd, y")
-                        )
-                        ) : (
-                        <span>Pick a date range</span>
-                        )}
+                            bookingDateRange.to ? (
+                                <>{format(bookingDateRange.from, "LLL dd, y")} - {format(bookingDateRange.to, "LLL dd, y")}</>
+                            ) : (format(bookingDateRange.from, "LLL dd, y"))
+                        ) : (<span>Pick a range</span>)}
                     </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                        initialFocus
-                        mode="range"
-                        defaultMonth={bookingDateRange?.from}
-                        selected={bookingDateRange}
-                        onSelect={setBookingDateRange}
-                        numberOfMonths={2}
-                    />
+                    <Calendar mode="range" selected={bookingDateRange} onSelect={setBookingDateRange} numberOfMonths={2} />
                     </PopoverContent>
                 </Popover>
             </div>
@@ -162,42 +117,26 @@ export default function AdminSettingsPage() {
         <CardFooter>
             <Button onClick={handleSaveBookingWindow} disabled={isSaving}>
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Window
+                Save Changes
             </Button>
         </CardFooter>
       </Card>
 
       <Card className="max-w-2xl">
         <CardHeader>
-          <CardTitle>Developer Settings</CardTitle>
-          <CardDescription>
-            These settings are for testing and development purposes.
-          </CardDescription>
+          <CardTitle>Payment Integration</CardTitle>
+          <CardDescription>Manage Paystack gateway status.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between space-x-4 rounded-lg border p-4">
+          <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="space-y-1">
-              <Label htmlFor="paystack-toggle" className="text-base font-semibold">
-                Enable Paystack Payments
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                When disabled, the booking form will bypass Paystack and create a 'Pending' booking for testing.
-              </p>
+              <Label className="text-base font-semibold">Enable Paystack Payments</Label>
+              <p className="text-sm text-muted-foreground">If disabled, bookings will be created as 'Pending' without payment.</p>
             </div>
-            {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
+            {loading ? (<Loader2 className="h-5 w-5 animate-spin" />) : (
                 <div className="flex items-center space-x-2">
-                {isPaystackEnabled ? (
-                    <CreditCard className="h-5 w-5 text-primary" />
-                ) : (
-                    <TestTube2 className="h-5 w-5 text-amber-500" />
-                )}
-                <Switch
-                    id="paystack-toggle"
-                    checked={isPaystackEnabled}
-                    onCheckedChange={handleTogglePayment}
-                />
+                    {isPaystackEnabled ? <CreditCard className="h-5 w-5 text-primary" /> : <TestTube2 className="h-5 w-5 text-amber-500" />}
+                    <Switch checked={isPaystackEnabled} onCheckedChange={handleTogglePayment} />
                 </div>
             )}
           </div>

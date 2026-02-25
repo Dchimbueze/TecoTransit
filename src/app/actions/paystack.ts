@@ -47,7 +47,7 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
         
         const bookingDetails = JSON.parse(metadata.booking_details);
 
-        const db = getFirebaseAdmin().firestore();
+        const db = getFirebaseAdmin()!.firestore();
         
         const result = await db.runTransaction(async (transaction) => {
             const newBookingRef = db.collection('bookings').doc();
@@ -62,6 +62,7 @@ export const verifyTransactionAndCreateBooking = async (reference: string) => {
             return { id: newBookingRef.id, ...newBookingData };
         });
         
+        // Use the intendedDate from metadata to avoid timezone issues
         await assignBookingToTrip({
             ...result,
             createdAt: Date.now()
