@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users, Plus, Trash2, Info, AlertTriangle } from 'lucide-react';
+import { CalendarIcon, User, Mail, Phone, Loader2, MessageCircle, HelpCircle, CreditCard, Send, Users, Plus, Trash2, Info, AlertTriangle, UserCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from './ui/checkbox';
 import BookingConfirmationDialog from './booking-confirmation-dialog';
@@ -123,6 +123,8 @@ export default function BookingForm() {
   const intendedDate = watch("intendedDate");
   const passengers = watch("passengers");
 
+  const isGroupBooking = passengers.length > 1;
+
   // Synchronize lead passenger info with the first passenger in the list
   useEffect(() => {
       if (passengers.length > 0) {
@@ -163,7 +165,6 @@ export default function BookingForm() {
                 const response = await fetch(`/api/seats?pickup=${encodeURIComponent(pickup)}&destination=${encodeURIComponent(destination)}&vehicleType=${encodeURIComponent(vehicleType)}&date=${dateStr}`);
                 const data = await response.json();
                 if (response.ok) {
-                    console.log(`[BookingForm] Seat Availability Received:`, data);
                     setSeatAvailability(data);
                 } else {
                     throw new Error(data.error);
@@ -192,7 +193,6 @@ export default function BookingForm() {
   const canAddPassenger = useMemo(() => {
     if (!vehicleType || !seatAvailability) return false;
     const currentCount = passengers.length;
-    // Cannot exceed vehicle's fixed capacity OR total remaining seats in the fleet
     return currentCount < vehicleCapacity && currentCount < seatAvailability.availableSeats;
   }, [vehicleType, vehicleCapacity, seatAvailability, passengers.length]);
 
@@ -203,20 +203,12 @@ export default function BookingForm() {
     }
 
     if (formData.passengers.length > vehicleCapacity) {
-        toast({
-            variant: 'destructive',
-            title: 'Group Too Large',
-            description: `A single ${vehicleType} can only accommodate up to ${vehicleCapacity} passengers.`,
-        });
+        toast({ variant: 'destructive', title: 'Group Too Large', description: `This vehicle can only accommodate up to ${vehicleCapacity} passengers.` });
         return;
     }
 
     if (seatAvailability && formData.passengers.length > seatAvailability.availableSeats) {
-        toast({
-            variant: 'destructive',
-            title: 'Not Enough Seats',
-            description: `Only ${seatAvailability.availableSeats} seats are available for this slot.`,
-        });
+        toast({ variant: 'destructive', title: 'Not Enough Seats', description: `Only ${seatAvailability.availableSeats} seats are available for this slot.` });
         return;
     }
     
@@ -230,6 +222,7 @@ export default function BookingForm() {
           ...formData,
           intendedDate: dateStr,
           totalFare,
+          type: isGroupBooking ? 'Group' : 'Individual',
         };
 
         if (isPaystackEnabled) {
@@ -250,7 +243,7 @@ export default function BookingForm() {
         } else {
             await createPendingBooking({
                 ...cleanBookingData,
-                intendedDate: dateStr // Ensure string is used
+                intendedDate: dateStr
             } as any);
             setIsConfirmationOpen(true);
             form.reset();
@@ -278,8 +271,14 @@ export default function BookingForm() {
        <CardHeader>
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
-                <CardTitle className="font-headline text-2xl md:text-3xl text-primary">Travel Reservation</CardTitle>
-                <CardDescription className="mt-2">Groups must fit within one vehicle ({vehicleCapacity || '?'} seats).</CardDescription>
+                <CardTitle className="font-headline text-2xl md:text-3xl text-primary">
+                    {isGroupBooking ? 'Group Reservation' : 'Travel Reservation'}
+                </CardTitle>
+                <CardDescription className="mt-2">
+                    {isGroupBooking 
+                        ? `Book together for up to ${vehicleCapacity} people in one vehicle.` 
+                        : `Secure your seat on our reliable routes.`}
+                </CardDescription>
             </div>
             <Dialog>
                 <DialogTrigger asChild>
@@ -288,7 +287,7 @@ export default function BookingForm() {
                  <DialogContent className="max-w-md p-6">
                     <DialogHeader className="text-center">
                         <DialogTitle>Customer Support</DialogTitle>
-                        <DialogDescription>Need help with your group booking?</DialogDescription>
+                        <DialogDescription>Need help with your {isGroupBooking ? 'group' : 'solo'} booking?</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         {contactOptions.map(contact => (
@@ -367,11 +366,11 @@ export default function BookingForm() {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-primary font-semibold text-lg">
                         <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-sm">2</div>
-                        <h3>Travelers</h3>
+                        <h3>{isGroupBooking ? 'Group Travelers' : 'Passenger Information'}</h3>
                     </div>
                     {seatAvailability && (
                         <div className={cn("text-xs font-bold px-3 py-1 rounded-full border", seatAvailability.availableSeats > 0 ? "bg-green-100 text-green-700 border-green-200" : "bg-red-100 text-red-700 border-red-200")}>
-                            {seatAvailability.availableSeats} seats available in total
+                            {seatAvailability.availableSeats} seats remaining
                         </div>
                     )}
                 </div>
@@ -389,14 +388,14 @@ export default function BookingForm() {
                                 <div className="grid sm:grid-cols-3 gap-6">
                                     <FormField control={form.control} name={`passengers.${index}.name`} render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{index === 0 ? 'Lead Passenger' : `Traveler ${index + 1}`}</FormLabel>
-                                            <FormControl><div className="relative"><User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-primary/50" /><Input placeholder="Full Name" {...field} className="pl-8" /></div></FormControl>
+                                            <FormLabel className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{index === 0 ? (isGroupBooking ? 'Lead Passenger' : 'Full Name') : `Traveler ${index + 1}`}</FormLabel>
+                                            <FormControl><div className="relative"><User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-primary/50" /><Input placeholder="Name" {...field} className="pl-8" /></div></FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )} />
                                     <FormField control={form.control} name={`passengers.${index}.phone`} render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Mobile Phone</FormLabel>
+                                            <FormLabel className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Contact Phone</FormLabel>
                                             <FormControl><div className="relative"><Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-primary/50" /><Input type="tel" placeholder="080..." {...field} className="pl-8" /></div></FormControl>
                                             <FormMessage />
                                         </FormItem>
@@ -416,11 +415,11 @@ export default function BookingForm() {
                     <div className="flex flex-col gap-2">
                         <Button type="button" variant="outline" className="w-full border-dashed h-12" onClick={() => append({ name: '', email: '', phone: '' })} disabled={!canAddPassenger}>
                             <Plus className="mr-2 h-4 w-4" />
-                            {passengers.length >= vehicleCapacity && vehicleType ? `Capacity Limit Reached (${vehicleCapacity} seats)` : 'Add Friend / Companion'}
+                            {passengers.length === 1 ? 'Add Friend / Companion (Group Booking)' : 'Add Another Member'}
                         </Button>
-                        {!canAddPassenger && vehicleType && seatAvailability && seatAvailability.availableSeats > 0 && passengers.length >= vehicleCapacity && (
+                        {!canAddPassenger && vehicleType && (
                             <p className="text-[10px] text-amber-600 flex items-center gap-1 px-1">
-                                <Info className="h-3 w-3" /> Note: For groups larger than {vehicleCapacity}, please make separate bookings.
+                                <Info className="h-3 w-3" /> Note: Groups must fit within one {vehicleType} ({vehicleCapacity} seats).
                             </p>
                         )}
                     </div>
@@ -431,15 +430,15 @@ export default function BookingForm() {
             <div className="space-y-4">
                 <div className="flex items-center gap-2 text-primary font-semibold text-lg">
                     <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-sm">3</div>
-                    <h3>Policies</h3>
+                    <h3>Agreements</h3>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-6">
                     <FormField control={form.control} name="luggageCount" render={({ field }) => (
                         <FormItem>
-                        <FormLabel>Heavy Luggage Count (Group Total)</FormLabel>
+                        <FormLabel>Large Luggage Count</FormLabel>
                         <Select onValueChange={(value) => field.onChange(parseInt(value, 10))} value={String(field.value || 0)} disabled={!vehicleType}>
                             <FormControl><SelectTrigger><SelectValue placeholder="Bags" /></SelectTrigger></FormControl>
-                            <SelectContent>{luggageOptions.map(i => <SelectItem key={i} value={String(i)}>{i === 0 ? 'No large bags' : `${i} heavy bag${i > 1 ? 's' : ''}`}</SelectItem>)}</SelectContent>
+                            <SelectContent>{luggageOptions.map(i => <SelectItem key={i} value={String(i)}>{i === 0 ? 'None' : `${i} large bag${i > 1 ? 's' : ''}`}</SelectItem>)}</SelectContent>
                         </Select>
                         <FormMessage />
                         </FormItem>
@@ -448,7 +447,7 @@ export default function BookingForm() {
                         <FormField control={form.control} name="allowReschedule" render={({ field }) => (
                             <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 bg-card">
                                 <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                                <div className="space-y-1 leading-none"><FormLabel className="text-sm">Allow auto-rescheduling if vehicle isn't full</FormLabel></div>
+                                <div className="space-y-1 leading-none"><FormLabel className="text-sm">Allow auto-rescheduling if the trip is underfilled</FormLabel></div>
                             </FormItem>
                         )} />
                         <FormField control={form.control} name="privacyPolicy" render={({ field }) => (
@@ -464,21 +463,21 @@ export default function BookingForm() {
             {fetchingSeats && (
                 <div className="flex items-center gap-2 p-4 bg-primary/5 rounded-lg text-sm border border-primary/10">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="animate-pulse">Checking seat availability...</span>
+                    <span>Updating seat availability...</span>
                 </div>
             )}
           </CardContent>
           <CardFooter className="bg-primary/5 px-6 py-6 flex flex-col sm:flex-row items-center justify-between border-t border-primary/20">
             <div className="mb-4 sm:mb-0 text-center sm:text-left">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1">Total Group Fare</p>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1">{isGroupBooking ? 'Total Group Fare' : 'Individual Fare'}</p>
                 <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-black text-primary">₦{totalFare.toLocaleString()}</span>
-                    <span className="text-sm font-medium text-muted-foreground">({passengers.length} seat{passengers.length > 1 ? 's' : ''})</span>
+                    <span className="text-sm font-medium text-muted-foreground">{passengers.length} seat{passengers.length > 1 ? 's' : ''}</span>
                 </div>
             </div>
-            <Button type="submit" size="lg" className="w-full sm:w-auto h-14 px-12 text-lg font-bold shadow-xl shadow-primary/20" disabled={isProcessing || settingsLoading || (seatAvailability !== null && passengers.length > seatAvailability.availableSeats)}>
+            <Button type="submit" size="lg" className="w-full sm:w-auto h-14 px-12 text-lg font-bold shadow-xl shadow-primary/20" disabled={isProcessing || settingsLoading}>
               {isProcessing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
-              {isProcessing ? 'Confirming...' : 'Secure Booking'}
+              {isProcessing ? 'Processing...' : 'Confirm Booking'}
             </Button>
           </CardFooter>
         </form>

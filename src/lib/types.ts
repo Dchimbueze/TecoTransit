@@ -14,6 +14,7 @@ export type Booking = {
   allowReschedule: boolean;
   paymentReference?: string;
   status: 'Pending' | 'Paid' | 'Confirmed' | 'Cancelled' | 'Refunded';
+  type: 'Individual' | 'Group';
   createdAt: number;
   confirmedDate?: string;
   tripId?: string;
@@ -46,7 +47,7 @@ export type SeatAvailability = {
     isFull: boolean;
 };
 
-export type BookingFormData = Omit<Booking, 'id' | 'status' | 'createdAt' | 'tripId' | 'intendedDate' | 'rescheduledCount' | 'passengers'> & {
+export type BookingFormData = Omit<Booking, 'id' | 'status' | 'createdAt' | 'tripId' | 'intendedDate' | 'rescheduledCount' | 'passengers' | 'type'> & {
     intendedDate: Date;
     privacyPolicy: boolean;
     allowReschedule: boolean;
