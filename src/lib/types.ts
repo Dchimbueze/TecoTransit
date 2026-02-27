@@ -1,9 +1,10 @@
 
 export type Booking = {
   id: string;
-  name: string;
-  email: string;
-  phone: string;
+  name: string; // Lead Passenger Name
+  email: string; // Lead Passenger Email
+  phone: string; // Lead Passenger Phone
+  passengers: Passenger[]; // All passengers in the group (including the lead)
   pickup: string;
   destination: string;
   intendedDate: string;
@@ -23,6 +24,7 @@ export type Passenger = {
     bookingId: string;
     name: string;
     phone: string;
+    email?: string;
 };
 
 export type Trip = {
@@ -44,10 +46,11 @@ export type SeatAvailability = {
     isFull: boolean;
 };
 
-export type BookingFormData = Omit<Booking, 'id' | 'status' | 'createdAt' | 'tripId' | 'intendedDate' | 'rescheduledCount'> & {
+export type BookingFormData = Omit<Booking, 'id' | 'status' | 'createdAt' | 'tripId' | 'intendedDate' | 'rescheduledCount' | 'passengers'> & {
     intendedDate: Date;
     privacyPolicy: boolean;
     allowReschedule: boolean;
+    passengers: Array<{ name: string; email: string; phone: string }>;
 };
 
 export type PriceRule = {

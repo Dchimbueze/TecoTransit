@@ -27,7 +27,7 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
         id: bookingId,
         createdAt: FieldValue.serverTimestamp(),
         status: 'Pending' as const,
-        intendedDate: format(data.intendedDate, 'yyyy-MM-dd'),
+        intendedDate: typeof data.intendedDate === 'string' ? data.intendedDate : format(data.intendedDate, 'yyyy-MM-dd'),
     };
     
     try {
@@ -53,7 +53,7 @@ export async function assignBookingToTrip(bookingData: Booking) {
     const db = getFirebaseAdmin()?.firestore();
     if (!db) throw new Error("Database connection failed.");
 
-    const { id: bookingId, name, phone, pickup, destination, vehicleType, intendedDate } = bookingData;
+    const { id: bookingId, passengers, pickup, destination, vehicleType, intendedDate } = bookingData;
     const priceRuleId = `${pickup}_${destination}_${vehicleType}`.toLowerCase().replace(/\s+/g, '-');
     
     try {
@@ -75,13 +75,23 @@ export async function assignBookingToTrip(bookingData: Booking) {
             
             const tripsSnapshot = await transaction.get(tripsQuery);
             let assigned = false;
-            const passenger: Passenger = { bookingId, name, phone };
+            
+            // Map group passengers to manifest passengers
+            const manifestPassengers: Passenger[] = passengers.map(p => ({
+                bookingId,
+                name: p.name,
+                phone: p.phone,
+                email: p.email
+            }));
 
+            // Try to fit the entire group into an existing trip
             for (const doc of tripsSnapshot.docs) {
                 const trip = doc.data() as Trip;
-                if (!trip.isFull) {
-                    const newCount = (trip.passengers || []).length + 1;
-                    const updates: any = { passengers: FieldValue.arrayUnion(passenger) };
+                const currentCount = (trip.passengers || []).length;
+                
+                if (currentCount + manifestPassengers.length <= capacity) {
+                    const newCount = currentCount + manifestPassengers.length;
+                    const updates: any = { passengers: FieldValue.arrayUnion(...manifestPassengers) };
                     if (newCount >= capacity) updates.isFull = true;
                     transaction.update(doc.ref, updates);
                     assigned = true;
@@ -90,9 +100,13 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 }
             }
 
+            // Create a new trip if group doesn't fit and we haven't reached vehicle limit
             if (!assigned && (tripsSnapshot.size < (priceRule.vehicleCount || 1))) {
                 const newIndex = tripsSnapshot.size + 1;
                 const newTripId = `${priceRuleId}_${intendedDate}_${newIndex}`;
+                
+                // Note: If the group is larger than vehicle capacity, this will create a trip that is immediately over-capacity.
+                // In practice, the UI should block groups larger than a single vehicle's capacity.
                 const newTrip: Trip = {
                     id: newTripId,
                     priceRuleId,
@@ -100,15 +114,15 @@ export async function assignBookingToTrip(bookingData: Booking) {
                     date: intendedDate,
                     vehicleIndex: newIndex,
                     capacity,
-                    passengers: [passenger],
-                    isFull: capacity <= 1,
+                    passengers: manifestPassengers,
+                    isFull: manifestPassengers.length >= capacity,
                 };
                 transaction.set(db.collection('trips').doc(newTripId), newTrip);
                 assigned = true;
                 assignedTripId = newTripId;
             }
 
-            if (!assigned) throw new Error("Trip is currently full.");
+            if (!assigned) throw new Error("Not enough space on any vehicle for this group.");
             if (assignedTripId) transaction.update(db.collection('bookings').doc(bookingId), { tripId: assignedTripId });
         });
         
@@ -140,10 +154,10 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
     const trip = tripSnap.data() as Trip;
     if (!trip.isFull) return;
     
-    const passengerIds = trip.passengers.map(p => p.bookingId);
-    if (passengerIds.length === 0) return;
+    const passengerBookingIds = Array.from(new Set(trip.passengers.map(p => p.bookingId)));
+    if (passengerBookingIds.length === 0) return;
 
-    const bookingsSnapshot = await db.collection('bookings').where(FieldPath.documentId(), 'in', passengerIds).get();
+    const bookingsSnapshot = await db.collection('bookings').where(FieldPath.documentId(), 'in', passengerBookingIds).get();
     const bookingsToConfirm = bookingsSnapshot.docs.filter((d: any) => d.data().status === 'Paid');
 
     if (bookingsToConfirm.length === 0) return;

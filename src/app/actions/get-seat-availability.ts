@@ -6,8 +6,7 @@ import type { PriceRule, SeatAvailability } from "@/lib/types";
 import { vehicleOptions } from "@/lib/constants";
 
 /**
- * Calculates seat availability by counting actual records in the bookings collection.
- * This is the source of truth for seat subtraction.
+ * Calculates seat availability by summing passenger counts in the bookings collection.
  */
 export async function getSeatAvailability(
     pickup: string,
@@ -43,8 +42,7 @@ export async function getSeatAvailability(
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
         const totalCapacity = (priceRule.vehicleCount || 1) * capacityPerVehicle;
 
-        // Query all relevant bookings. We filter by route and vehicle, 
-        // then filter by date in memory to avoid needing complex composite indexes.
+        // Query all relevant bookings for this route and vehicle
         const bookingsQuery = db.collection('bookings')
             .where('pickup', '==', pickup)
             .where('destination', '==', destination)
@@ -66,18 +64,21 @@ export async function getSeatAvailability(
             // Only count if it's not cancelled
             if (booking.status === 'Cancelled' || booking.status === 'Refunded') return;
 
-            // If it's Paid or Confirmed, it's occupied
+            // Determine if the booking is currently active/occupying a seat
+            let isActive = false;
             if (booking.status === 'Paid' || booking.status === 'Confirmed') {
-                occupiedSeats++;
-                return;
-            }
-
-            // If it's Pending, only count if it was created recently (still on hold)
-            if (booking.status === 'Pending' && booking.createdAt) {
+                isActive = true;
+            } else if (booking.status === 'Pending' && booking.createdAt) {
                 const createdAtMs = booking.createdAt.toMillis ? booking.createdAt.toMillis() : booking.createdAt;
                 if (now - createdAtMs < HOLD_WINDOW_MS) {
-                    occupiedSeats++;
+                    isActive = true;
                 }
+            }
+
+            if (isActive) {
+                // For group bookings, count the length of the passengers array.
+                // Fallback to 1 if the array doesn't exist (legacy data).
+                occupiedSeats += (booking.passengers?.length || 1);
             }
         });
 
