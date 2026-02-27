@@ -4,7 +4,7 @@
 import { doc, updateDoc, deleteDoc, getDoc, getDocs, query, collection, where, Timestamp, writeBatch } from 'firebase/firestore';
 import { sendBookingStatusEmail, sendManualRescheduleEmail, sendRefundRequestEmail } from './send-email';
 import { cleanupTrips } from './cleanup-trips';
-import type { Booking } from '@/lib/types';
+import type { Booking, Trip } from '@/lib/types';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { assignBookingToTrip } from './create-booking-and-assign-trip';
@@ -189,7 +189,6 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
     const bookingRef = adminDb.collection('bookings').doc(bookingId);
 
     try {
-        let oldTripId: string | undefined;
         let bookingForAssignment: any;
 
         await adminDb.runTransaction(async (transaction) => {
@@ -198,7 +197,7 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
                 throw new Error(`Booking ${bookingId} not found.`);
             }
             const bookingData = bookingDoc.data() as Booking;
-            oldTripId = bookingData.tripId;
+            const oldTripId = bookingData.tripId;
 
             bookingForAssignment = {
                 ...bookingData,
@@ -207,25 +206,31 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
                 createdAt: (bookingData.createdAt as any), 
             };
 
+            // If the booking was assigned to a trip, we need to remove ALL group members from that manifest
             if (oldTripId) {
                 const oldTripRef = adminDb.collection('trips').doc(oldTripId);
-                const passengerToRemove = {
-                    bookingId: bookingId,
-                    name: bookingData.name,
-                    phone: bookingData.phone
-                };
-                transaction.update(oldTripRef, {
-                    passengers: FieldValue.arrayRemove(passengerToRemove)
-                });
+                const oldTripDoc = await transaction.get(oldTripRef);
+                
+                if (oldTripDoc.exists) {
+                    const oldTripData = oldTripDoc.data() as Trip;
+                    // Filter out ALL passengers associated with this bookingId
+                    const updatedPassengers = oldTripData.passengers.filter(p => p.bookingId !== bookingId);
+                    
+                    transaction.update(oldTripRef, {
+                        passengers: updatedPassengers,
+                        isFull: updatedPassengers.length >= oldTripData.capacity
+                    });
+                }
             }
 
             transaction.update(bookingRef, {
                 intendedDate: newDate,
                 tripId: FieldValue.delete(),
-                rescheduledCount: FieldValue.increment(bookingData.rescheduledCount ? 1 : 1) 
+                rescheduledCount: FieldValue.increment(1) 
             });
         });
 
+        // Re-assign to a new manifest for the new date
         await assignBookingToTrip(bookingForAssignment);
 
         await sendManualRescheduleEmail({

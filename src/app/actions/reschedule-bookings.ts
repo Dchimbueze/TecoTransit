@@ -1,3 +1,4 @@
+
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
@@ -26,9 +27,12 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
         throw new Error("Database connection failed.");
     }
 
-    const yesterday = subDays(startOfDay(new Date()), 1);
+    // Use startOfDay to ensure we are comparing midnight-to-midnight snapshots
+    const today = startOfDay(new Date());
+    const yesterday = subDays(today, 1);
+    
     const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayStr = format(today, 'yyyy-MM-dd');
     
     const result: RescheduleResult = {
         totalTripsScanned: 0,
@@ -76,14 +80,15 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
                             return;
                         }
                         
-                        // Prevent infinite rescheduling loops
+                        // Prevent infinite rescheduling loops (limit to 1 auto-reschedule)
                         if ((bookingData.rescheduledCount || 0) >= 1) {
                             result.skippedCount += (bookingData.passengers?.length || 1);
+                            // Notify admin that this specific booking needs manual eyes
                             await sendRescheduleFailedEmail(bookingData as Booking);
                             return;
                         }
 
-                        // Update booking to new date, remove old tripId, and increment reschedule count
+                        // Update booking to today's date, remove old tripId link, and increment count
                         transaction.update(bookingRef, { 
                             intendedDate: todayStr, 
                             tripId: FieldValue.delete(),
@@ -105,7 +110,7 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
                     });
 
                     if (bookingForAssignment && emailProps) {
-                       // Re-assign group to a new trip on today's manifest
+                       // Re-assign the entire group to today's manifest
                        await assignBookingToTrip(bookingForAssignment);
                        await sendBookingRescheduledEmail(emailProps);
                        result.rescheduledCount += (bookingForAssignment.passengers?.length || 1);
@@ -117,7 +122,7 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
                 }
             }
 
-            // Cleanup: delete the old trip document
+            // Cleanup: delete the old trip document as it is no longer valid
             await tripDoc.ref.delete().catch(console.error);
         }
         
