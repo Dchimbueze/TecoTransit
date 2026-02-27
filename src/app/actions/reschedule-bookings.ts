@@ -1,10 +1,9 @@
-
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
 import { format, subDays, startOfDay } from 'date-fns';
 import { assignBookingToTrip } from "./create-booking-and-assign-trip";
-import type { Booking, Trip, Passenger } from "@/lib/types";
+import type { Booking, Trip } from "@/lib/types";
 import { sendBookingRescheduledEmail, sendRescheduleFailedEmail } from "./send-email";
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -20,8 +19,6 @@ type RescheduleResult = {
 /**
  * Finds all trips from the previous day that were not full, attempts to reschedule
  * the entire group (booking) to a trip on the current day.
- * 
- * This processes UNIQUE bookings within the trip manifest to ensure groups stay together.
  */
 export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
     const db = getFirebaseAdmin()?.firestore();
@@ -57,22 +54,20 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
         for (const tripDoc of snapshot.docs) {
             const trip = tripDoc.data() as Trip;
             
-            // Get unique booking IDs from this trip manifest
+            // Get unique booking IDs from this trip manifest to process groups as units
             const uniqueBookingIds = Array.from(new Set(trip.passengers.map(p => p.bookingId)));
             result.totalPassengersToProcess += trip.passengers.length;
 
             for (const bookingId of uniqueBookingIds) {
                 const bookingRef = db.collection('bookings').doc(bookingId);
-                const oldTripRef = tripDoc.ref;
-                let emailProps: any = null;
                 let bookingForAssignment: any = null;
+                let emailProps: any = null;
 
                 try {
                     await db.runTransaction(async (transaction) => {
                         const bookingDoc = await transaction.get(bookingRef);
-                        if (!bookingDoc.exists) {
-                            throw new Error(`Booking ${bookingId} not found during transaction.`);
-                        }
+                        if (!bookingDoc.exists) return;
+
                         const bookingData = { id: bookingDoc.id, ...bookingDoc.data() } as any;
                         
                         // Skip if user opted out, booking was cancelled, or already rescheduled once
@@ -81,6 +76,7 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
                             return;
                         }
                         
+                        // Prevent infinite rescheduling loops
                         if ((bookingData.rescheduledCount || 0) >= 1) {
                             result.skippedCount += (bookingData.passengers?.length || 1);
                             await sendRescheduleFailedEmail(bookingData as Booking);
@@ -108,8 +104,8 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
                         };
                     });
 
-                    // If transaction was successful, re-assign group to a new trip and send email
                     if (bookingForAssignment && emailProps) {
+                       // Re-assign group to a new trip on today's manifest
                        await assignBookingToTrip(bookingForAssignment);
                        await sendBookingRescheduledEmail(emailProps);
                        result.rescheduledCount += (bookingForAssignment.passengers?.length || 1);
@@ -117,24 +113,18 @@ export async function rescheduleUnderfilledTrips(): Promise<RescheduleResult> {
 
                 } catch (e: any) {
                     result.failedCount++;
-                    const errorMessage = `Failed to process booking ${bookingId}: ${e.message}`;
-                    result.errors.push(errorMessage);
-                    console.error(errorMessage, e);
+                    result.errors.push(`Failed to process booking ${bookingId}: ${e.message}`);
                 }
             }
 
-            // After processing all unique bookings for the trip, delete the old trip document.
-            try {
-                await tripDoc.ref.delete();
-            } catch (deleteError: any) {
-                console.error(`Failed to delete old trip ${tripDoc.id}:`, deleteError);
-            }
+            // Cleanup: delete the old trip document
+            await tripDoc.ref.delete().catch(console.error);
         }
         
         return result;
 
     } catch (error: any) {
-        console.error("A critical error occurred during the rescheduling process:", error);
-        throw new Error("Failed to execute reschedule job due to a server error.");
+        console.error("Critical error in rescheduling job:", error);
+        throw new Error("Failed to execute reschedule job.");
     }
 }

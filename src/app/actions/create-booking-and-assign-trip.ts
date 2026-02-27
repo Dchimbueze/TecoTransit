@@ -1,4 +1,3 @@
-
 'use server';
 
 import type { Booking, BookingFormData, Passenger, PriceRule, Trip } from '@/lib/types';
@@ -49,6 +48,9 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
     }
 };
 
+/**
+ * Assigns a booking (individual or group) to a trip manifest.
+ */
 export async function assignBookingToTrip(bookingData: Booking) {
     const db = getFirebaseAdmin()?.firestore();
     if (!db) throw new Error("Database connection failed.");
@@ -105,8 +107,6 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 const newIndex = tripsSnapshot.size + 1;
                 const newTripId = `${priceRuleId}_${intendedDate}_${newIndex}`;
                 
-                // Note: If the group is larger than vehicle capacity, this will create a trip that is immediately over-capacity.
-                // In practice, the UI should block groups larger than a single vehicle's capacity.
                 const newTrip: Trip = {
                     id: newTripId,
                     priceRuleId,
@@ -122,13 +122,13 @@ export async function assignBookingToTrip(bookingData: Booking) {
                 assignedTripId = newTripId;
             }
 
-            if (!assigned) throw new Error("Not enough space on any vehicle for this group.");
+            if (!assigned) throw new Error("No available vehicles or seats for this route on this date.");
             if (assignedTripId) transaction.update(db.collection('bookings').doc(bookingId), { tripId: assignedTripId });
         });
         
         if (assignedTripId) await checkAndConfirmTrip(db, assignedTripId);
     } catch (error: any) {
-        console.error(`Transaction failed for booking ${bookingId}:`, error);
+        console.error(`Assignment failed for booking ${bookingId}:`, error);
         await sendOverflowEmail(bookingData, error.message);
         throw error;
     }
@@ -178,6 +178,6 @@ export async function checkAndConfirmTrip(db: any, tripId: string) {
             vehicleType: data.vehicleType,
             totalFare: data.totalFare,
             confirmedDate: trip.date,
-        }).catch(e => console.error("Email failed:", e));
+        }).catch(e => console.error("Confirmation email failed:", e));
     }
 }
