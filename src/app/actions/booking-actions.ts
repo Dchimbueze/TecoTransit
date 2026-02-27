@@ -16,7 +16,9 @@ if (!process.env.PAYSTACK_SECRET_KEY) {
 
 const paystack = Paystack(process.env.PAYSTACK_SECRET_KEY);
 
-
+/**
+ * Updates a booking status. If cancelled, it cleans up the associated trip manifest.
+ */
 export async function updateBookingStatus(bookingId: string, status: 'Cancelled'): Promise<void> {
   const adminDb = getFirebaseAdmin()?.firestore();
   if (!adminDb) {
@@ -34,7 +36,7 @@ export async function updateBookingStatus(bookingId: string, status: 'Cancelled'
 
   await bookingDocRef.update({ status });
 
-  // After successfully updating the status, remove the passenger from the trip
+  // If assigned to a trip, we need to remove all group members from the manifest
   if (bookingToUpdate.tripId) {
     await cleanupTrips([bookingId]);
   }
@@ -52,11 +54,12 @@ export async function updateBookingStatus(bookingId: string, status: 'Cancelled'
     });
   } catch (emailError) {
     console.error("Failed to send status update email:", emailError);
-    // We don't re-throw here, as the primary action (updating status) succeeded.
-    // The admin will see the status change, but we should log this failure.
   }
 }
 
+/**
+ * Initiates a refund request to the admin.
+ */
 export async function requestRefund(bookingId: string): Promise<{success: boolean, message: string}> {
     const adminDb = getFirebaseAdmin()?.firestore();
     if (!adminDb) {
@@ -75,7 +78,7 @@ export async function requestRefund(bookingId: string): Promise<{success: boolea
         return { success: false, message: "Refunds can only be requested for cancelled bookings." };
     }
     if (!booking.paymentReference) {
-        return { success: false, message: "This booking has no payment reference, so a refund cannot be processed automatically." };
+        return { success: false, message: "This booking has no payment reference for automatic refund processing." };
     }
 
     try {
@@ -93,58 +96,57 @@ export async function requestRefund(bookingId: string): Promise<{success: boolea
     }
 }
 
+/**
+ * Deletes a booking record and cleans its trip manifest.
+ */
 export async function deleteBooking(id: string): Promise<void> {
   const db = getFirebaseAdmin()?.firestore();
   if (!db) {
     throw new Error("Database not available");
   }
   const bookingDocRef = db.collection('bookings').doc(id);
-  // We need to get the booking data before deleting it to check for a tripId
   const bookingSnap = await bookingDocRef.get();
   
   if (bookingSnap.exists) {
       const bookingData = bookingSnap.data();
-      await deleteDoc(bookingDocRef);
+      await bookingDocRef.delete();
       
-      // Only run cleanup if the booking was actually assigned to a trip
       if (bookingData && bookingData.tripId) {
           await cleanupTrips([id]);
       }
   }
 }
 
-
+/**
+ * Deletes all bookings within a date range (Maintenance utility).
+ */
 export async function deleteBookingsInRange(startDate: Date | null, endDate: Date | null): Promise<number> {
     const db = getFirebaseAdmin()?.firestore();
     if (!db) {
       throw new Error("Database not available");
     }
     
-    let bookingsQuery = query(collection(db, 'bookings'));
+    let bookingsQuery = db.collection('bookings');
 
-    // If dates are provided, add where clauses. Otherwise, it will query all bookings.
     if (startDate && endDate) {
         const startTimestamp = Timestamp.fromDate(startDate);
         const endOfDay = new Date(endDate);
         endOfDay.setHours(23, 59, 59, 999);
         const endTimestamp = Timestamp.fromDate(endOfDay);
         
-        bookingsQuery = query(
-          collection(db, 'bookings'),
-          where('createdAt', '>=', startTimestamp),
-          where('createdAt', '<=', endTimestamp)
-        );
+        bookingsQuery = db.collection('bookings')
+          .where('createdAt', '>=', startTimestamp)
+          .where('createdAt', '<=', endTimestamp);
     }
     
-    const snapshot = await getDocs(bookingsQuery);
+    const snapshot = await bookingsQuery.get();
     if (snapshot.empty) {
         return 0;
     }
     
     const deletedBookingIds: string[] = [];
-    
     const batches = [];
-    let currentBatch = writeBatch(db);
+    let currentBatch = db.batch();
     let currentBatchSize = 0;
 
     for (const doc of snapshot.docs) {
@@ -156,7 +158,7 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
 
         if (currentBatchSize === 500) {
             batches.push(currentBatch);
-            currentBatch = writeBatch(db);
+            currentBatch = db.batch();
             currentBatchSize = 0;
         }
     }
@@ -167,19 +169,16 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
 
     await Promise.all(batches.map(batch => batch.commit()));
 
-
     if (deletedBookingIds.length > 0) {
-      const chunkSize = 100;
-      for (let i = 0; i < deletedBookingIds.length; i += chunkSize) {
-        const chunk = deletedBookingIds.slice(i, i + chunkSize);
-        await cleanupTrips(chunk);
-      }
+        await cleanupTrips(deletedBookingIds);
     }
     
     return snapshot.size;
 }
 
-
+/**
+ * Manually moves a group booking to a new date and re-assigns them.
+ */
 export async function manuallyRescheduleBooking(bookingId: string, newDate: string): Promise<{success: boolean; error?: string}> {
     const adminDb = getFirebaseAdmin()?.firestore();
     if (!adminDb) {
@@ -206,14 +205,14 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
                 createdAt: (bookingData.createdAt as any), 
             };
 
-            // If the booking was assigned to a trip, we need to remove ALL group members from that manifest
+            // CLEANUP: Remove ALL group members from the old manifest
             if (oldTripId) {
                 const oldTripRef = adminDb.collection('trips').doc(oldTripId);
                 const oldTripDoc = await transaction.get(oldTripRef);
                 
                 if (oldTripDoc.exists) {
                     const oldTripData = oldTripDoc.data() as Trip;
-                    // Filter out ALL passengers associated with this bookingId
+                    // Filter out ALL manifest entries associated with this bookingId
                     const updatedPassengers = oldTripData.passengers.filter(p => p.bookingId !== bookingId);
                     
                     transaction.update(oldTripRef, {
@@ -223,6 +222,7 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
                 }
             }
 
+            // Reset booking for fresh assignment
             transaction.update(bookingRef, {
                 intendedDate: newDate,
                 tripId: FieldValue.delete(),
@@ -230,7 +230,7 @@ export async function manuallyRescheduleBooking(bookingId: string, newDate: stri
             });
         });
 
-        // Re-assign to a new manifest for the new date
+        // Re-assign to a new manifest for the new date (as an atomic unit)
         await assignBookingToTrip(bookingForAssignment);
 
         await sendManualRescheduleEmail({

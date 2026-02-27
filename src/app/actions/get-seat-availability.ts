@@ -7,7 +7,7 @@ import { vehicleOptions } from "@/lib/constants";
 
 /**
  * Calculates seat availability by directly counting individual passengers 
- * across all active groups in the bookings collection for the specific route/date.
+ * across all active groups in the bookings collection for a specific route and date.
  */
 export async function getSeatAvailability(
     pickup: string,
@@ -38,12 +38,11 @@ export async function getSeatAvailability(
         ) as keyof typeof vehicleOptions | undefined;
 
         if (!vehicleKey || (priceRule.vehicleCount || 0) <= 0) {
-            console.warn(`[getSeatAvailability] Invalid vehicle config for: ${priceRuleId}`);
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
-        const totalCapacity = (priceRule.vehicleCount || 1) * capacityPerVehicle;
+        const totalFleetCapacity = (priceRule.vehicleCount || 1) * capacityPerVehicle;
 
         // Query all relevant bookings. We filter by route/vehicle type.
         const bookingsQuery = db.collection('bookings')
@@ -61,7 +60,7 @@ export async function getSeatAvailability(
         bookingsSnapshot.forEach(doc => {
             const booking = doc.data();
             
-            // 1. Date Check (In-memory to avoid index complexity)
+            // 1. Date Check (Compare strings YYYY-MM-DD)
             if (booking.intendedDate !== date) return;
 
             // 2. Cancellation Check
@@ -79,7 +78,7 @@ export async function getSeatAvailability(
             }
 
             if (isActive) {
-                // Count individual passengers in the group booking
+                // Count individual passengers in the group booking record
                 const passengerCount = (booking.passengers && Array.isArray(booking.passengers)) 
                     ? booking.passengers.length 
                     : 1;
@@ -87,13 +86,11 @@ export async function getSeatAvailability(
             }
         });
 
-        const availableSeats = Math.max(0, totalCapacity - occupiedSeats);
-
-        console.log(`[getSeatAvailability] ${pickup}->${destination} (${vehicleType}) on ${date}: Occupied=${occupiedSeats}, Total=${totalCapacity}, Available=${availableSeats}`);
+        const availableSeats = Math.max(0, totalFleetCapacity - occupiedSeats);
 
         return {
             availableSeats,
-            totalCapacity,
+            totalCapacity: totalFleetCapacity,
             isFull: availableSeats <= 0,
         };
 
