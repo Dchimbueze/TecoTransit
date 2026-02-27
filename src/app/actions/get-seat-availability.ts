@@ -6,7 +6,8 @@ import type { PriceRule, SeatAvailability } from "@/lib/types";
 import { vehicleOptions } from "@/lib/constants";
 
 /**
- * Calculates seat availability by summing passenger counts in the bookings collection.
+ * Calculates seat availability by directly counting individual passengers 
+ * across all active groups in the bookings collection.
  */
 export async function getSeatAvailability(
     pickup: string,
@@ -27,6 +28,7 @@ export async function getSeatAvailability(
         const priceRuleSnap = await priceRuleRef.get();
 
         if (!priceRuleSnap.exists) {
+            console.warn(`[getSeatAvailability] Price rule not found: ${priceRuleId}`);
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
@@ -36,13 +38,16 @@ export async function getSeatAvailability(
         ) as keyof typeof vehicleOptions | undefined;
 
         if (!vehicleKey || (priceRule.vehicleCount || 0) <= 0) {
+            console.warn(`[getSeatAvailability] Invalid vehicle config for: ${priceRuleId}`);
             return { availableSeats: 0, totalCapacity: 0, isFull: true };
         }
 
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
         const totalCapacity = (priceRule.vehicleCount || 1) * capacityPerVehicle;
 
-        // Query all relevant bookings for this route and vehicle
+        // Query bookings for this route and vehicle. 
+        // We filter by priceRuleId to stay efficient, then by date in-memory 
+        // to avoid complex index requirements.
         const bookingsQuery = db.collection('bookings')
             .where('pickup', '==', pickup)
             .where('destination', '==', destination)
@@ -58,13 +63,13 @@ export async function getSeatAvailability(
         bookingsSnapshot.forEach(doc => {
             const booking = doc.data();
             
-            // Only count if it's the right date
+            // 1. Date Check
             if (booking.intendedDate !== date) return;
 
-            // Only count if it's not cancelled
+            // 2. Cancellation Check
             if (booking.status === 'Cancelled' || booking.status === 'Refunded') return;
 
-            // Determine if the booking is currently active/occupying a seat
+            // 3. Activity Check (Paid, Confirmed, or active Pending hold)
             let isActive = false;
             if (booking.status === 'Paid' || booking.status === 'Confirmed') {
                 isActive = true;
@@ -76,9 +81,11 @@ export async function getSeatAvailability(
             }
 
             if (isActive) {
-                // For group bookings, count the length of the passengers array.
-                // Fallback to 1 if the array doesn't exist (legacy data).
-                occupiedSeats += (booking.passengers?.length || 1);
+                // Count individual passengers in the group
+                const passengerCount = (booking.passengers && Array.isArray(booking.passengers)) 
+                    ? booking.passengers.length 
+                    : 1;
+                occupiedSeats += passengerCount;
             }
         });
 
