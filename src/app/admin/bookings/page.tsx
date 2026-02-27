@@ -1,8 +1,7 @@
-
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { format, parseISO, startOfMonth, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, parseISO, subDays, startOfDay, endOfDay } from "date-fns";
 import type { Booking } from "@/lib/types";
 import { DateRange } from "react-day-picker";
 
@@ -12,10 +11,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Briefcase, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, AlertCircle, Loader2, Ticket, History, Search, HandCoins, Ban, CircleDot, Check, CreditCard, EllipsisVertical, Sparkles, Users, UserCircle, Eraser } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Briefcase, Calendar as CalendarIcon, CheckCircle, RefreshCw, Trash2, AlertCircle, Loader2, Ticket, History, Search, Sparkles, Users, UserCircle, Eraser, AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -25,7 +22,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { getAllBookings } from "@/lib/data";
 import { getStatusVariant } from "@/lib/utils";
-import { updateBookingStatus, deleteBooking, deleteBookingsInRange, requestRefund, manuallyRescheduleBooking } from "@/app/actions/booking-actions";
+import { updateBookingStatus, deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking } from "@/app/actions/booking-actions";
 import { synchronizeAndCreateTrips } from "@/app/actions/synchronize-bookings";
 
 function BookingsPageSkeleton() {
@@ -117,6 +114,7 @@ export default function AdminBookingsPage() {
     const booking = allBookings.find(b => b.id === bookingId);
     if (booking) {
         setSelectedBooking(booking);
+        setNewRescheduleDate(undefined); // Reset date when opening a new booking
         setIsManageDialogOpen(true);
     }
   }
@@ -248,46 +246,79 @@ export default function AdminBookingsPage() {
                             <Eraser className="mr-2 h-4 w-4" /> Cleanup
                         </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="max-w-md">
                         <DialogHeader>
-                            <DialogTitle>Cleanup Old Bookings</DialogTitle>
-                            <DialogDescription>Permanently delete records within a specific range. This also cleans up trip manifests.</DialogDescription>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Eraser className="h-5 w-5 text-destructive" />
+                                Cleanup Old Bookings
+                            </DialogTitle>
+                            <DialogDescription>
+                                Select a timeframe to permanently remove records. This will also clear their presence in trip manifests.
+                            </DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="grid gap-2">
-                                <Label>Timeframe</Label>
+                        <div className="space-y-6 py-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="cleanup-range">Select Deletion Period</Label>
                                 <Select value={cleanupRange} onValueChange={(v: any) => setCleanupRange(v)}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectTrigger id="cleanup-range">
+                                        <SelectValue placeholder="Select timeframe" />
+                                    </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="7days">Last 7 Days</SelectItem>
                                         <SelectItem value="1month">Last 30 Days</SelectItem>
-                                        <SelectItem value="custom">Custom Range</SelectItem>
+                                        <SelectItem value="custom">Custom Date Range</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
+
                             {cleanupRange === 'custom' && (
-                                <div className="grid gap-2">
-                                    <Label>Select Range</Label>
-                                    <Calendar mode="range" selected={customCleanupRange} onSelect={setCustomCleanupRange} numberOfMonths={1} className="rounded-md border mx-auto" />
+                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                                    <Label>Choose Date Range</Label>
+                                    <div className="border rounded-md p-2 bg-muted/20">
+                                        <Calendar 
+                                            mode="range" 
+                                            selected={customCleanupRange} 
+                                            onSelect={setCustomCleanupRange} 
+                                            numberOfMonths={1} 
+                                            className="mx-auto" 
+                                        />
+                                    </div>
                                 </div>
                             )}
+
+                            <div className="rounded-lg bg-destructive/5 p-4 border border-destructive/10">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                                    <div className="text-sm">
+                                        <p className="font-semibold text-destructive">Destructive Action</p>
+                                        <p className="text-destructive/80">
+                                            Records deleted during cleanup cannot be recovered. Ensure you have exported necessary data.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <DialogFooter>
+                        <DialogFooter className="gap-2 sm:gap-0">
+                            <Button variant="ghost" onClick={() => setIsCleanupDialogOpen(false)}>Cancel</Button>
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                     <Button variant="destructive" className="w-full sm:w-auto" disabled={isCleaning}>
                                         {isCleaning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                                        Proceed with Deletion
+                                        Purge Records
                                     </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                        <AlertDialogDescription>This action will permanently delete all selected booking records and remove them from any assigned trip manifests. This cannot be undone.</AlertDialogDescription>
+                                        <AlertDialogDescription>
+                                            You are about to permanently delete matching booking records and manifests. This action is irreversible.
+                                        </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleCleanup} className={cn(buttonVariants({ variant: "destructive" }))}>Confirm Delete</AlertDialogAction>
+                                        <AlertDialogCancel>Go Back</AlertDialogCancel>
+                                        <AlertDialogAction onClick={handleCleanup} className={cn(buttonVariants({ variant: "destructive" }))}>
+                                            Confirm Purge
+                                        </AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
@@ -461,3 +492,5 @@ export default function AdminBookingsPage() {
     </div>
   );
 }
+
+const Separator = () => <div className="h-px w-full bg-border" />;
