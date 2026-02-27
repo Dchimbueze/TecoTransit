@@ -84,7 +84,9 @@ export default function AdminHeader() {
              </ClientOnly>
           </nav>
            <div className="hidden md:flex items-center gap-2">
-             <ThemeToggle />
+             <ClientOnly>
+               <ThemeToggle />
+             </ClientOnly>
              <Button variant="ghost" size="sm" onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Logout
@@ -93,8 +95,8 @@ export default function AdminHeader() {
           
           {/* Mobile Navigation */}
           <div className="md:hidden flex items-center gap-2">
-            <ThemeToggle />
             <ClientOnly>
+                <ThemeToggle />
                 <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                     <Button variant="outline" size="icon">

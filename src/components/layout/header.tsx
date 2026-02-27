@@ -59,14 +59,16 @@ export default function Header() {
                 }
                 return <NavLink key={link.href} href={link.href} label={link.label}/>
              })}
-             <ThemeToggle />
+             <ClientOnly>
+               <ThemeToggle />
+             </ClientOnly>
           </nav>
 
           {/* Mobile Navigation */}
           <div className="md:hidden flex items-center gap-2">
-            <ThemeToggle />
             <ClientOnly>
-                <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+              <ThemeToggle />
+              <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                     <Button variant="outline" size="icon">
                     <Menu className="h-5 w-5" />
@@ -106,7 +108,7 @@ export default function Header() {
                         )}
                     </nav>
                 </SheetContent>
-                </Sheet>
+              </Sheet>
             </ClientOnly>
           </div>
         </div>
