@@ -24,7 +24,7 @@ export type Passenger = {
     bookingId: string;
     name: string;
     phone: string;
-    email?: string;
+    email: string;
 };
 
 export type Trip = {

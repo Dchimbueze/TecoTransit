@@ -7,7 +7,7 @@ import { vehicleOptions } from "@/lib/constants";
 
 /**
  * Calculates seat availability by directly counting individual passengers 
- * across all active groups in the bookings collection.
+ * across all active groups in the bookings collection for the specific route/date.
  */
 export async function getSeatAvailability(
     pickup: string,
@@ -45,9 +45,7 @@ export async function getSeatAvailability(
         const capacityPerVehicle = vehicleOptions[vehicleKey].capacity;
         const totalCapacity = (priceRule.vehicleCount || 1) * capacityPerVehicle;
 
-        // Query bookings for this route and vehicle. 
-        // We filter by priceRuleId to stay efficient, then by date in-memory 
-        // to avoid complex index requirements.
+        // Query all relevant bookings. We filter by route/vehicle type.
         const bookingsQuery = db.collection('bookings')
             .where('pickup', '==', pickup)
             .where('destination', '==', destination)
@@ -56,14 +54,14 @@ export async function getSeatAvailability(
         const bookingsSnapshot = await bookingsQuery.get();
         
         const now = Date.now();
-        const HOLD_WINDOW_MS = 7 * 60 * 1000; // 7 minutes seat hold
+        const HOLD_WINDOW_MS = 7 * 60 * 1000; // 7 minutes seat hold for pending bookings
 
         let occupiedSeats = 0;
 
         bookingsSnapshot.forEach(doc => {
             const booking = doc.data();
             
-            // 1. Date Check
+            // 1. Date Check (In-memory to avoid index complexity)
             if (booking.intendedDate !== date) return;
 
             // 2. Cancellation Check
@@ -81,7 +79,7 @@ export async function getSeatAvailability(
             }
 
             if (isActive) {
-                // Count individual passengers in the group
+                // Count individual passengers in the group booking
                 const passengerCount = (booking.passengers && Array.isArray(booking.passengers)) 
                     ? booking.passengers.length 
                     : 1;
