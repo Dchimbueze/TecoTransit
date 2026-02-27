@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { getAllBookings } from "@/lib/data";
 import { getStatusVariant } from "@/lib/utils";
 import { updateBookingStatus, deleteBooking, deleteBookingsInRange, manuallyRescheduleBooking } from "@/app/actions/booking-actions";
@@ -114,7 +115,7 @@ export default function AdminBookingsPage() {
     const booking = allBookings.find(b => b.id === bookingId);
     if (booking) {
         setSelectedBooking(booking);
-        setNewRescheduleDate(undefined); // Reset date when opening a new booking
+        setNewRescheduleDate(undefined);
         setIsManageDialogOpen(true);
     }
   }
@@ -246,21 +247,21 @@ export default function AdminBookingsPage() {
                             <Eraser className="mr-2 h-4 w-4" /> Cleanup
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                        <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
+                    <DialogContent className="max-w-md p-0 overflow-hidden">
+                        <DialogHeader className="p-6 pb-0">
+                            <DialogTitle className="flex items-center gap-2 text-xl">
                                 <Eraser className="h-5 w-5 text-destructive" />
                                 Cleanup Old Bookings
                             </DialogTitle>
-                            <DialogDescription>
+                            <DialogDescription className="text-sm pt-2">
                                 Select a timeframe to permanently remove records. This will also clear their presence in trip manifests.
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-6 py-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="cleanup-range">Select Deletion Period</Label>
+                        <div className="p-6 space-y-6">
+                            <div className="space-y-3">
+                                <Label htmlFor="cleanup-range" className="text-sm font-medium">Select Deletion Period</Label>
                                 <Select value={cleanupRange} onValueChange={(v: any) => setCleanupRange(v)}>
-                                    <SelectTrigger id="cleanup-range">
+                                    <SelectTrigger id="cleanup-range" className="w-full">
                                         <SelectValue placeholder="Select timeframe" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -272,8 +273,8 @@ export default function AdminBookingsPage() {
                             </div>
 
                             {cleanupRange === 'custom' && (
-                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                                    <Label>Choose Date Range</Label>
+                                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                    <Label className="text-sm font-medium">Choose Date Range</Label>
                                     <div className="border rounded-md p-2 bg-muted/20">
                                         <Calendar 
                                             mode="range" 
@@ -289,8 +290,8 @@ export default function AdminBookingsPage() {
                             <div className="rounded-lg bg-destructive/5 p-4 border border-destructive/10">
                                 <div className="flex items-start gap-3">
                                     <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                                    <div className="text-sm">
-                                        <p className="font-semibold text-destructive">Destructive Action</p>
+                                    <div className="text-sm leading-relaxed">
+                                        <p className="font-bold text-destructive">Destructive Action</p>
                                         <p className="text-destructive/80">
                                             Records deleted during cleanup cannot be recovered. Ensure you have exported necessary data.
                                         </p>
@@ -298,11 +299,11 @@ export default function AdminBookingsPage() {
                                 </div>
                             </div>
                         </div>
-                        <DialogFooter className="gap-2 sm:gap-0">
-                            <Button variant="ghost" onClick={() => setIsCleanupDialogOpen(false)}>Cancel</Button>
+                        <DialogFooter className="p-6 bg-muted/30 border-t flex-col sm:flex-row gap-3">
+                            <Button variant="ghost" onClick={() => setIsCleanupDialogOpen(false)} className="w-full sm:w-auto">Cancel</Button>
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" className="w-full sm:w-auto" disabled={isCleaning}>
+                                    <Button variant="destructive" className="w-full sm:w-auto font-semibold" disabled={isCleaning}>
                                         {isCleaning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
                                         Purge Records
                                     </Button>
