@@ -1,3 +1,4 @@
+
 'use server';
 
 import type { Booking, BookingFormData, Passenger, PriceRule, Trip } from '@/lib/types';
@@ -7,6 +8,23 @@ import { format } from 'date-fns';
 import { vehicleOptions } from '@/lib/constants';
 import { sendBookingStatusEmail } from './send-email';
 import { Resend } from 'resend';
+
+/**
+ * Converts Firestore Timestamps to plain numbers (milliseconds)
+ */
+function sanitizeData(data: any) {
+    const sanitized = { ...data };
+    for (const key in sanitized) {
+        if (sanitized[key] && typeof sanitized[key] === 'object') {
+            if (typeof sanitized[key].toMillis === 'function') {
+                sanitized[key] = sanitized[key].toMillis();
+            } else if ('_seconds' in sanitized[key]) {
+                sanitized[key] = sanitized[key]._seconds * 1000;
+            }
+        }
+    }
+    return sanitized;
+}
 
 type CreateBookingResult = {
     success: boolean;
@@ -38,9 +56,11 @@ export const createPendingBooking = async (data: Omit<BookingFormData, 'privacyP
         
         if (!createdData) return { success: false, error: 'Failed to retrieve booking.' };
 
+        const sanitized = sanitizeData(createdData);
+
         return { 
             success: true, 
-            booking: { ...createdData, createdAt: (createdData.createdAt as any).toMillis() } as Booking
+            booking: { id: createdDoc.id, ...sanitized } as Booking
         };
     } catch (error: any) {
         console.error("Error creating pending booking:", error);

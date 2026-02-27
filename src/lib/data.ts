@@ -2,9 +2,26 @@
 'use server';
 
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
-import type { Trip, Booking, BookingsQueryResult } from '@/lib/types';
+import type { Trip, Booking } from '@/lib/types';
 import { Query } from 'firebase-admin/firestore';
 
+/**
+ * Converts Firestore Timestamps to plain numbers (milliseconds)
+ * to allow serialization across the server/client boundary.
+ */
+function sanitizeData(data: any) {
+    const sanitized = { ...data };
+    for (const key in sanitized) {
+        if (sanitized[key] && typeof sanitized[key] === 'object') {
+            if (typeof sanitized[key].toMillis === 'function') {
+                sanitized[key] = sanitized[key].toMillis();
+            } else if ('_seconds' in sanitized[key]) {
+                sanitized[key] = sanitized[key]._seconds * 1000;
+            }
+        }
+    }
+    return sanitized;
+}
 
 export async function getAllTrips(): Promise<{ trips: Trip[]; error: string | null; }> {
     const db = getFirebaseAdmin()?.firestore();
@@ -15,7 +32,7 @@ export async function getAllTrips(): Promise<{ trips: Trip[]; error: string | nu
     try {
         const tripsQuery = db.collection("trips").orderBy('date', 'asc').orderBy('vehicleIndex', 'asc');
         const tripsSnapshot = await tripsQuery.get();
-        const trips = tripsSnapshot.docs.map(doc => doc.data() as Trip);
+        const trips = tripsSnapshot.docs.map(doc => sanitizeData(doc.data()) as Trip);
 
         return { trips, error: null };
 
@@ -44,10 +61,10 @@ export async function getAllBookings(status?: Booking['status']): Promise<{ book
         
         const bookings = snapshot.docs.map(doc => {
             const data = doc.data();
+            const sanitized = sanitizeData(data);
             return {
                 id: doc.id,
-                ...data,
-                createdAt: (data.createdAt as FirebaseFirestore.Timestamp).toMillis(),
+                ...sanitized,
             } as Booking;
         });
 
