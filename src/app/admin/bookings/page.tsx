@@ -493,5 +493,3 @@ export default function AdminBookingsPage() {
     </div>
   );
 }
-
-const Separator = () => <div className="h-px w-full bg-border" />;
