@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { format, parseISO, startOfMonth, subDays } from "date-fns";
+import { format, parseISO, startOfMonth, subDays, startOfDay, endOfDay } from "date-fns";
 import type { Booking } from "@/lib/types";
 import { DateRange } from "react-day-picker";
 
@@ -10,12 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Phone, MapPin, Car, Bus, Briefcase, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, AlertCircle, Loader2, Ticket, History, Search, HandCoins, Ban, CircleDot, Check, CreditCard, EllipsisVertical, Sparkles, Users, UserCircle } from "lucide-react";
+import { User, Mail, Phone, MapPin, Car, Bus, Briefcase, Calendar as CalendarIcon, CheckCircle, Download, RefreshCw, Trash2, AlertCircle, Loader2, Ticket, History, Search, HandCoins, Ban, CircleDot, Check, CreditCard, EllipsisVertical, Sparkles, Users, UserCircle, Eraser } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -79,15 +79,20 @@ export default function AdminBookingsPage() {
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
+  
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
   const [isReschedulePopoverOpen, setIsReschedulePopoverOpen] = useState(false);
+  const [isCleanupDialogOpen, setIsCleanupDialogOpen] = useState(false);
   
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<Booking['status'] | 'All'>('All');
   const [typeFilter, setTypeFilter] = useState<'All' | 'Individual' | 'Group'>('All');
 
   const [newRescheduleDate, setNewRescheduleDate] = useState<Date | undefined>();
+  const [cleanupRange, setCleanupRange] = useState<'7days' | '1month' | 'custom'>('7days');
+  const [customCleanupRange, setCustomCleanupRange] = useState<DateRange | undefined>();
 
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -150,7 +155,7 @@ export default function AdminBookingsPage() {
     setIsSyncing(true);
     try {
         const result = await synchronizeAndCreateTrips();
-        toast({ title: "Sync Result", description: `${result.succeeded} successful, ${result.failed} failed.` });
+        toast({ title: "Sync Result", description: `${result.processed} processed: ${result.succeeded} successful, ${result.failed} failed.` });
         fetchBookings();
     } catch (e: any) {
         toast({ variant: "destructive", title: "Sync Error", description: e.message });
@@ -158,6 +163,40 @@ export default function AdminBookingsPage() {
         setIsSyncing(false);
     }
   }
+
+  const handleCleanup = async () => {
+    setIsCleaning(true);
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    if (cleanupRange === '7days') {
+        start = startOfDay(subDays(new Date(), 7));
+        end = endOfDay(new Date());
+    } else if (cleanupRange === '1month') {
+        start = startOfDay(subDays(new Date(), 30));
+        end = endOfDay(new Date());
+    } else if (cleanupRange === 'custom' && customCleanupRange?.from && customCleanupRange?.to) {
+        start = startOfDay(customCleanupRange.from);
+        end = endOfDay(customCleanupRange.to);
+    }
+
+    if (!start || !end) {
+        toast({ variant: "destructive", title: "Invalid Range", description: "Please select a valid date range." });
+        setIsCleaning(false);
+        return;
+    }
+
+    try {
+        const deletedCount = await deleteBookingsInRange(start, end);
+        toast({ title: "Cleanup Successful", description: `Successfully deleted ${deletedCount} booking records.` });
+        setIsCleanupDialogOpen(false);
+        fetchBookings();
+    } catch (e: any) {
+        toast({ variant: "destructive", title: "Cleanup Failed", description: e.message });
+    } finally {
+        setIsCleaning(false);
+    }
+  };
 
   const handleManualReschedule = async () => {
     if (!selectedBooking || !newRescheduleDate) return;
@@ -203,6 +242,58 @@ export default function AdminBookingsPage() {
                 <Button variant="outline" size="icon" onClick={fetchBookings} disabled={loading}>
                     {loading ? <Loader2 className="animate-spin h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
                 </Button>
+                <Dialog open={isCleanupDialogOpen} onOpenChange={setIsCleanupDialogOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" className="hidden sm:flex text-destructive hover:text-destructive">
+                            <Eraser className="mr-2 h-4 w-4" /> Cleanup
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Cleanup Old Bookings</DialogTitle>
+                            <DialogDescription>Permanently delete records within a specific range. This also cleans up trip manifests.</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div className="grid gap-2">
+                                <Label>Timeframe</Label>
+                                <Select value={cleanupRange} onValueChange={(v: any) => setCleanupRange(v)}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="7days">Last 7 Days</SelectItem>
+                                        <SelectItem value="1month">Last 30 Days</SelectItem>
+                                        <SelectItem value="custom">Custom Range</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {cleanupRange === 'custom' && (
+                                <div className="grid gap-2">
+                                    <Label>Select Range</Label>
+                                    <Calendar mode="range" selected={customCleanupRange} onSelect={setCustomCleanupRange} numberOfMonths={1} className="rounded-md border mx-auto" />
+                                </div>
+                            )}
+                        </div>
+                        <DialogFooter>
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="destructive" className="w-full sm:w-auto" disabled={isCleaning}>
+                                        {isCleaning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                                        Proceed with Deletion
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                        <AlertDialogDescription>This action will permanently delete all selected booking records and remove them from any assigned trip manifests. This cannot be undone.</AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={handleCleanup} className={cn(buttonVariants({ variant: "destructive" }))}>Confirm Delete</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
                 <Button variant="outline" onClick={handleSync} disabled={isSyncing} className="hidden sm:flex">
                     <Sparkles className="mr-2 h-4 w-4" /> Sync Trips
                 </Button>
