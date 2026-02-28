@@ -248,7 +248,7 @@ export default function AdminBookingsPage() {
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md p-0 overflow-hidden">
-                        <DialogHeader className="p-6 pb-0">
+                        <DialogHeader className="p-6 pb-2">
                             <DialogTitle className="flex items-center gap-2 text-xl">
                                 <Eraser className="h-5 w-5 text-destructive" />
                                 Cleanup Old Bookings
@@ -259,7 +259,7 @@ export default function AdminBookingsPage() {
                         </DialogHeader>
                         <div className="p-6 space-y-6">
                             <div className="space-y-3">
-                                <Label htmlFor="cleanup-range" className="text-sm font-medium">Select Deletion Period</Label>
+                                <Label htmlFor="cleanup-range" className="text-sm font-semibold">Select Deletion Period</Label>
                                 <Select value={cleanupRange} onValueChange={(v: any) => setCleanupRange(v)}>
                                     <SelectTrigger id="cleanup-range" className="w-full">
                                         <SelectValue placeholder="Select timeframe" />
@@ -274,7 +274,7 @@ export default function AdminBookingsPage() {
 
                             {cleanupRange === 'custom' && (
                                 <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                    <Label className="text-sm font-medium">Choose Date Range</Label>
+                                    <Label className="text-sm font-semibold">Choose Date Range</Label>
                                     <div className="border rounded-md p-2 bg-muted/20">
                                         <Calendar 
                                             mode="range" 
@@ -287,12 +287,12 @@ export default function AdminBookingsPage() {
                                 </div>
                             )}
 
-                            <div className="rounded-lg bg-destructive/5 p-4 border border-destructive/10">
+                            <div className="rounded-lg bg-destructive/10 p-4 border border-destructive/20">
                                 <div className="flex items-start gap-3">
                                     <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
                                     <div className="text-sm leading-relaxed">
                                         <p className="font-bold text-destructive">Destructive Action</p>
-                                        <p className="text-destructive/80">
+                                        <p className="text-destructive/90">
                                             Records deleted during cleanup cannot be recovered. Ensure you have exported necessary data.
                                         </p>
                                     </div>
