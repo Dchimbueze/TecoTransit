@@ -259,17 +259,34 @@ export default function AdminBookingsPage() {
                         </DialogHeader>
                         <div className="p-6 space-y-6">
                             <div className="space-y-3">
-                                <Label htmlFor="cleanup-range" className="text-sm font-semibold">Select Deletion Period</Label>
-                                <Select value={cleanupRange} onValueChange={(v: any) => setCleanupRange(v)}>
-                                    <SelectTrigger id="cleanup-range" className="w-full">
-                                        <SelectValue placeholder="Select timeframe" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="7days">Last 7 Days</SelectItem>
-                                        <SelectItem value="1month">Last 30 Days</SelectItem>
-                                        <SelectItem value="custom">Custom Date Range</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <Label className="text-sm font-semibold">Select Deletion Period</Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button 
+                                        type="button"
+                                        variant={cleanupRange === '7days' ? 'default' : 'outline'} 
+                                        onClick={() => setCleanupRange('7days')}
+                                        className="w-full"
+                                    >
+                                        7 Days
+                                    </Button>
+                                    <Button 
+                                        type="button"
+                                        variant={cleanupRange === '1month' ? 'default' : 'outline'} 
+                                        onClick={() => setCleanupRange('1month')}
+                                        className="w-full"
+                                    >
+                                        1 Month
+                                    </Button>
+                                </div>
+                                <Button 
+                                    type="button"
+                                    variant={cleanupRange === 'custom' ? 'default' : 'outline'} 
+                                    onClick={() => setCleanupRange('custom')}
+                                    className="w-full mt-2"
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    Custom Range
+                                </Button>
                             </div>
 
                             {cleanupRange === 'custom' && (
