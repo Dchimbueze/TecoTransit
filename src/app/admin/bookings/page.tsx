@@ -294,7 +294,11 @@ export default function AdminBookingsPage() {
                                             ) : "Custom Range"}
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="center">
+                                    <PopoverContent 
+                                        className="w-auto p-0" 
+                                        align="center"
+                                        onPointerDownOutside={(e) => e.preventDefault()}
+                                    >
                                         <Calendar 
                                             mode="range" 
                                             selected={customCleanupRange} 
