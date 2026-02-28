@@ -303,18 +303,6 @@ export default function AdminBookingsPage() {
                                     </div>
                                 </div>
                             )}
-
-                            <div className="rounded-lg bg-destructive/10 p-4 border border-destructive/20">
-                                <div className="flex items-start gap-3">
-                                    <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                                    <div className="text-sm leading-relaxed">
-                                        <p className="font-bold text-destructive">Destructive Action</p>
-                                        <p className="text-destructive/90">
-                                            Records deleted during cleanup cannot be recovered. Ensure you have exported necessary data.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                         <DialogFooter className="p-6 bg-muted/30 border-t flex-col sm:flex-row gap-3">
                             <Button variant="ghost" onClick={() => setIsCleanupDialogOpen(false)} className="w-full sm:w-auto">Cancel</Button>
