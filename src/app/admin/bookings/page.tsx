@@ -278,31 +278,33 @@ export default function AdminBookingsPage() {
                                         1 Month
                                     </Button>
                                 </div>
-                                <Button 
-                                    type="button"
-                                    variant={cleanupRange === 'custom' ? 'default' : 'outline'} 
-                                    onClick={() => setCleanupRange('custom')}
-                                    className="w-full mt-2"
-                                >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    Custom Range
-                                </Button>
-                            </div>
-
-                            {cleanupRange === 'custom' && (
-                                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                    <Label className="text-sm font-semibold">Choose Date Range</Label>
-                                    <div className="border rounded-md p-2 bg-muted/20">
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button 
+                                            type="button"
+                                            variant={cleanupRange === 'custom' ? 'default' : 'outline'} 
+                                            onClick={() => setCleanupRange('custom')}
+                                            className="w-full mt-2"
+                                        >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {cleanupRange === 'custom' && customCleanupRange?.from ? (
+                                                customCleanupRange.to ? (
+                                                    <>{format(customCleanupRange.from, "LLL dd")} - {format(customCleanupRange.to, "LLL dd")}</>
+                                                ) : (format(customCleanupRange.from, "LLL dd"))
+                                            ) : "Custom Range"}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="center">
                                         <Calendar 
                                             mode="range" 
                                             selected={customCleanupRange} 
                                             onSelect={setCustomCleanupRange} 
                                             numberOfMonths={1} 
-                                            className="mx-auto" 
+                                            className="mx-auto"
                                         />
-                                    </div>
-                                </div>
-                            )}
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
                         </div>
                         <DialogFooter className="p-6 bg-muted/30 border-t flex-col sm:flex-row gap-3">
                             <Button variant="ghost" onClick={() => setIsCleanupDialogOpen(false)} className="w-full sm:w-auto">Cancel</Button>
