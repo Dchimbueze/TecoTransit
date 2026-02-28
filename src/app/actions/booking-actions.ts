@@ -1,12 +1,11 @@
 
 'use server';
 
-import { doc, updateDoc, deleteDoc, getDoc, getDocs, query, collection, where, Timestamp, writeBatch } from 'firebase/firestore';
 import { sendBookingStatusEmail, sendManualRescheduleEmail, sendRefundRequestEmail } from './send-email';
 import { cleanupTrips } from './cleanup-trips';
 import type { Booking, Trip } from '@/lib/types';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { assignBookingToTrip } from './create-booking-and-assign-trip';
 import Paystack from 'paystack';
 
@@ -126,9 +125,10 @@ export async function deleteBookingsInRange(startDate: Date | null, endDate: Dat
       throw new Error("Database not available");
     }
     
-    let bookingsQuery = db.collection('bookings');
+    let bookingsQuery = db.collection('bookings') as FirebaseFirestore.Query;
 
     if (startDate && endDate) {
+        // Use Timestamp from firebase-admin/firestore to avoid mismatch errors
         const startTimestamp = Timestamp.fromDate(startDate);
         const endOfDay = new Date(endDate);
         endOfDay.setHours(23, 59, 59, 999);
